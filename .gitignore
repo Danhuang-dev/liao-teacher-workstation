@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+_shots/
+_backup/
+*.m4s
+*.mp3
+audio/
