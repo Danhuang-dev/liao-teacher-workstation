@@ -2106,15 +2106,18 @@ async function renderAnalysisTab(){
       </div>
       <div class="card" style="background:var(--info-bg);border:1px solid var(--info)">
         <div style="font-size:13px;color:var(--ink2);line-height:1.8">
-          <strong style="color:var(--info)">💡 使用说明（重要）：</strong><br>
-          <strong>第一步：启动AI分析服务</strong><br>
+          <strong style="color:var(--info)">💡 AI分析服务部署指南（手机可用）：</strong><br>
+          <strong>方案一：一键部署到公网（推荐，手机可用）</strong><br>
+          <a href="https://render.com/deploy?repo=https://github.com/Danhuang-dev/liao-teacher-workstation" target="_blank" style="display:inline-block;background:#46E3B7;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;font-weight:600;margin:6px 0">🚀 一键部署到Render（免费）</a><br>
+          部署完成后，把Render给你的网址（如 https://xxx.onrender.com）填入「设置」页面的"分析服务地址"<br><br>
+          <strong>方案二：本地运行（电脑使用）</strong><br>
           <button class="btn btn-sm btn-primary" style="margin:6px 0" onclick="downloadAIService()">📥 下载 ai_analysis_server.py</button><br>
-          在下载目录打开终端，运行：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
-          <strong>第二步：用本地地址打开工作台</strong><br>
-          服务启动后，用 <code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">http://localhost:8890</code> 或本地文件打开本工作台<br>
-          <strong>第三步：粘贴B站链接分析</strong><br>
-          在上方输入框粘贴B站视频链接，点击"智能解析"<br>
-          系统自动：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析
+          运行：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
+          然后用 <code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">http://localhost:8890</code> 访问<br><br>
+          <strong>使用方法：</strong><br>
+          1. 确保服务已启动并可访问<br>
+          2. 粘贴B站名师教学视频链接，点击"智能解析"<br>
+          3. 系统自动：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析
         </div>
       </div>
     `;
