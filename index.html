@@ -2093,9 +2093,10 @@ async function renderAnalysisTab(){
         </div>
         <div class="form-group"><label class="form-label">视频链接</label>
           <div class="video-input-group">
-            <input class="form-input" id="an_videoUrl" value="${escapeHtml(a.videoUrl)}" placeholder="粘贴视频链接...">
+            <input class="form-input" id="an_videoUrl" value="${escapeHtml(a.videoUrl)}" placeholder="粘贴B站视频链接，如 https://www.bilibili.com/video/BV1xxx">
             <button class="btn btn-primary" onclick="analyzeVideo()">🔍 智能解析</button>
           </div>
+          <div id="analysisStatus" style="display:none;margin-top:12px"></div>
         </div>
         <div class="form-group"><label class="form-label">教学目标</label><textarea class="form-textarea" id="an_objectives" rows="3">${escapeHtml(a.objectives||'')}</textarea></div>
         <div class="form-row">
@@ -2106,12 +2107,11 @@ async function renderAnalysisTab(){
       <div class="card" style="background:var(--info-bg);border:1px solid var(--info)">
         <div style="font-size:13px;color:var(--ink2);line-height:1.8">
           <strong style="color:var(--info)">💡 使用说明：</strong><br>
-          1. 粘贴名师教学视频链接，点击"智能解析"<br>
-          2. 系统会自动生成课堂结构框架，您可以粘贴视频文字稿到"逐字稿"标签页<br>
-          3. 在"教学流程"中拆解每个环节的时间和教学行为<br>
-          4. "思维导图"自动生成知识结构树<br>
-          5. "教学技巧"和"互动设计"提炼名师的教学方法<br>
-          6. 最后在"转化教案"中一键生成您的专属教案
+          1. 确保AI分析服务已启动：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
+          2. 粘贴B站名师教学视频链接，点击"智能解析"<br>
+          3. 系统自动：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析<br>
+          4. 生成完整逐字稿（带语气标记）、教学环节拆解、知识点、思维导图、教学技巧<br>
+          5. 在"转化教案"中一键生成您的专属教案
         </div>
       </div>
     `;
@@ -2312,29 +2312,98 @@ async function saveAnalysis(){
   toast('分析已保存');
 }
 
+// AI分析服务地址
+const AI_API_BASE=lsGet('ai_api_base','http://localhost:8890');
+
 async function analyzeVideo(){
   const url=$('#an_videoUrl')?.value||currentAnalysis.videoUrl;
-  if(!url){toast('请先粘贴视频链接');return}
-  const taskId=createTask('transcript','解析视频：'+(currentAnalysis.title||'课堂视频'),120);
-  updateTaskProgress(taskId,10,'processing');
-  toast('正在解析视频...');
-  await new Promise(r=>setTimeout(r,800));
-  updateTaskProgress(taskId,30,'processing');
-  // 基于视频链接生成分析框架
-  const a=currentAnalysis;
-  const topic=a.title.replace(/[（(].*[）)]/g,'').trim()||'生物课堂';
-  updateTaskProgress(taskId,50,'processing');
-  await new Promise(r=>setTimeout(r,600));
-  a.objectives=`1. 知识目标：阐明${topic}的核心概念和原理\n2. 能力目标：通过观察和分析培养科学思维\n3. 情感目标：体会生命科学的严谨与美妙`;
-  a.keyPoints=`${topic}的核心概念和关键过程`;
-  a.difficultPoints=`${topic}过程中抽象概念的理解与应用`;
-  a.updatedAt=Date.now();
-  updateTaskProgress(taskId,80,'processing');
-  await dbPut('classAnalyses',a);
-  updateTaskProgress(taskId,100,'processing');
-  completeTask(taskId);
-  toast('视频解析完成！已生成课堂信息框架');
-  renderAnalysisTab();
+  if(!url){toast('请先粘贴B站视频链接');return}
+
+  // 创建任务进度
+  const taskId=createTask('transcript','AI课堂分析：'+(currentAnalysis.title||'课堂视频'),300);
+  updateTaskProgress(taskId,5,'processing');
+
+  // 显示分析状态
+  const statusEl=document.getElementById('analysisStatus');
+  if(statusEl){
+    statusEl.style.display='block';
+    statusEl.innerHTML='<div style="text-align:center;padding:20px"><div style="font-size:14px;margin-bottom:10px">🔍 正在连接AI分析服务...</div><div class="task-progress-bar" style="max-width:300px;margin:0 auto"><div class="task-progress-fill" style="width:5%;background:var(--primary)"></div></div></div>';
+  }
+
+  try{
+    // 1. 提交分析任务
+    updateTaskProgress(taskId,10,'processing');
+    const resp=await fetch(AI_API_BASE+'/api/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url})
+    });
+    if(!resp.ok)throw new Error('AI服务连接失败，请检查服务是否启动');
+    const data=await resp.json();
+    const aiTaskId=data.task_id;
+
+    // 2. 轮询进度
+    let result=null;
+    for(let i=0;i<120;i++){ // 最多等待10分钟
+      await new Promise(r=>setTimeout(r,3000));
+      const statusResp=await fetch(AI_API_BASE+'/api/status/'+aiTaskId);
+      const status=await statusResp.json();
+      updateTaskProgress(taskId,status.progress,'processing');
+
+      if(statusEl){
+        statusEl.innerHTML=`<div style="text-align:center;padding:20px">
+          <div style="font-size:14px;margin-bottom:10px">${status.message||'处理中...'}</div>
+          <div class="task-progress-bar" style="max-width:300px;margin:0 auto"><div class="task-progress-fill" style="width:${status.progress}%;background:var(--primary)"></div></div>
+          <div style="font-size:12px;color:var(--ink3);margin-top:8px">${status.progress}%</div>
+        </div>`;
+      }
+
+      if(status.status==='completed'){
+        const resultResp=await fetch(AI_API_BASE+'/api/result/'+aiTaskId);
+        result=await resultResp.json();
+        break;
+      }
+      if(status.status==='failed'){
+        throw new Error(status.message||'分析失败');
+      }
+    }
+
+    if(!result)throw new Error('分析超时，请稍后重试');
+
+    // 3. 保存结果到IndexedDB
+    updateTaskProgress(taskId,95,'processing');
+    const a=currentAnalysis;
+    a.title=result.video_info.title||a.title;
+    a.videoUrl=url;
+    a.transcript=result.transcript;
+    a.teachingSegments=result.analysis.teaching_segments;
+    a.knowledgePoints=result.analysis.knowledge_points;
+    a.techniques=result.analysis.techniques;
+    a.mindmap=result.analysis.mindmap;
+    a.objectives=`1. 知识目标：掌握${a.title.replace(/[（(].*[）)]/g,'').trim()}的核心概念\n2. 能力目标：通过分析培养科学思维\n3. 情感目标：体会生命科学的严谨与美妙`;
+    a.keyPoints=result.analysis.knowledge_points?.join('、')||'核心知识点';
+    a.difficultPoints='抽象概念的理解与应用';
+    a.updatedAt=Date.now();
+    await dbPut('classAnalyses',a);
+
+    updateTaskProgress(taskId,100,'processing');
+    completeTask(taskId,result.transcript.length+'段逐字稿');
+    toast('✅ 分析完成！共'+result.transcript.length+'段逐字稿');
+
+    // 刷新显示
+    renderAnalysisTab();
+
+  }catch(e){
+    failTask(taskId,e.message);
+    toast('❌ '+e.message);
+    if(statusEl){
+      statusEl.innerHTML=`<div style="text-align:center;padding:20px;color:var(--danger)">
+        <div style="font-size:14px;margin-bottom:10px">❌ 分析失败</div>
+        <div style="font-size:12px">${e.message}</div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:10px">请确保AI分析服务已启动：python3 ai_analysis_server.py</div>
+      </div>`;
+    }
+  }
 }
 
 /* ===== 逐字稿渲染：阅读模式 + 编辑模式 ===== */
@@ -4051,6 +4120,28 @@ registerView('settings',async function(main){
       </div>
     </div>
     <div class="card">
+      <div class="card-title" style="justify-content:space-between">
+        <span>🎬 AI课堂分析服务</span>
+        <span class="tag tag-outline" id="analysisServiceTag">检测中...</span>
+      </div>
+      <div style="padding:12px 0">
+        <div class="form-group">
+          <label class="form-label">分析服务地址</label>
+          <input class="form-input" id="aiApiBase" value="${lsGet('ai_api_base','http://localhost:8890')}" placeholder="如：http://localhost:8890">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="saveAnalysisService()">保存地址</button>
+          <button class="btn btn-outline" onclick="testAnalysisService()">🔌 测试服务</button>
+        </div>
+        <div style="margin-top:12px;padding:12px;background:var(--info-bg);border-radius:8px;font-size:12px;color:var(--ink2);line-height:1.6">
+          <strong>启动方法：</strong><br>
+          1. 在工作台目录下运行：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
+          2. 服务启动后，在课堂分析页面粘贴B站链接即可自动分析<br>
+          3. 分析流程：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-title">关于</div>
       <div style="font-size:13px;color:var(--ink2);line-height:1.8">
         <div>廖老师的工作台 v2.0</div>
@@ -4556,6 +4647,34 @@ async function testAIConnection(){
   }else{
     if(tag){tag.className='tag tag-danger';tag.textContent='连接失败 ❌';}
     toast('连接失败，请检查API Key和Endpoint ID');
+  }
+}
+
+// AI分析服务配置
+function saveAnalysisService(){
+  const base=$('#aiApiBase').value.trim().replace(/\/$/,'');
+  if(base)lsSet('ai_api_base',base);
+  window.AI_API_BASE=base;
+  toast('分析服务地址已保存');
+  testAnalysisService();
+}
+
+async function testAnalysisService(){
+  const tag=$('#analysisServiceTag');
+  if(tag){tag.className='tag tag-outline';tag.textContent='测试中...';}
+  try{
+    const base=lsGet('ai_api_base','http://localhost:8890');
+    const resp=await fetch(base+'/api/health',{signal:AbortSignal.timeout(5000)});
+    const data=await resp.json();
+    if(data.status==='ok'){
+      if(tag){tag.className='tag tag-success';tag.textContent='服务已连接 ✅';}
+      toast('AI分析服务连接成功！');
+    }else{
+      throw new Error('服务异常');
+    }
+  }catch(e){
+    if(tag){tag.className='tag tag-danger';tag.textContent='未连接 ❌';}
+    toast('分析服务未启动，请运行：python3 ai_analysis_server.py');
   }
 }
 
