@@ -812,7 +812,7 @@ registerView('dashboard',async function(main){
   }
   
   // 计算明日课程
-  const tomorrow=new Date(today.getTime()+86400000);
+  const tomorrow=new Date(new Date().getTime()+86400000);
   const tomorrowIdx=tomorrow.getDay()-1;
   const isTomorrowWeekend=tomorrowIdx<0||tomorrowIdx>4;
   const tomorrowClasses=[];
