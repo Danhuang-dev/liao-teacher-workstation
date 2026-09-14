@@ -153,6 +153,24 @@ tr:hover td{background:var(--bg)}
 .todo-more{text-align:center;font-size:12px;color:var(--primary);padding:6px;cursor:pointer;font-weight:500}
 .todo-more:hover{text-decoration:underline}
 
+/* ===== 任务进度面板 ===== */
+.task-panel{background:linear-gradient(135deg,#EEF2FF,#fff);border:1.5px solid #C7D2FE;border-radius:14px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 12px rgba(99,102,241,0.1)}
+.task-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;color:var(--ink)}
+.task-badge{background:#6366F1;color:#fff;font-size:11px;font-weight:600;padding:2px 10px;border-radius:10px;margin-left:8px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+.task-list{display:flex;flex-direction:column;gap:10px}
+.task-item{display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.8);border-radius:10px;border:1px solid rgba(99,102,241,0.1)}
+.task-item.task-processing{border-color:#6366F1;background:rgba(99,102,241,0.05)}
+.task-item.task-pending{opacity:0.7}
+.task-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.task-info{flex:1;min-width:0}
+.task-title{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-meta{font-size:11px;color:var(--ink3);margin-bottom:6px}
+.task-progress-bar{height:6px;background:#E5E7EB;border-radius:3px;overflow:hidden}
+.task-progress-fill{height:100%;border-radius:3px;transition:width 0.5s ease;animation:progressShine 2s infinite}
+@keyframes progressShine{0%{filter:brightness(1)}50%{filter:brightness(1.2)}100%{filter:brightness(1)}}
+.task-percent{font-size:13px;font-weight:700;color:var(--ink2);flex-shrink:0;min-width:40px;text-align:right}
+
 /* ===== 看板 ===== */
 .kanban{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .kanban-col{background:var(--bg);border-radius:12px;padding:12px;min-height:200px}
@@ -564,6 +582,85 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
 function lsSet(k,v){localStorage.setItem(k,JSON.stringify(v))}
 
+/* ===== 任务进度管理系统 ===== */
+const TASK_TYPES={
+  transcript:{icon:'🎙️',name:'逐字稿生成',color:'var(--primary)'},
+  ppt:{icon:'📊',name:'PPT生成',color:'var(--accent)'},
+  answer2ppt:{icon:'📝',name:'答案转PPT',color:'var(--warning)'},
+  analysis:{icon:'🔬',name:'课堂分析',color:'var(--success)'},
+  backup:{icon:'💾',name:'数据备份',color:'var(--ink2)'},
+  sync:{icon:'☁️',name:'数据同步',color:'#6366F1'}
+};
+function getTasks(){return lsGet('tasks',[])}
+function saveTasks(tasks){lsSet('tasks',tasks)}
+function createTask(type,title,estimatedSeconds=60){
+  const tasks=getTasks();
+  const task={id:uid(),type,title,status:'pending',progress:0,createdAt:Date.now(),updatedAt:Date.now(),estimatedSeconds,result:null};
+  tasks.unshift(task);
+  if(tasks.length>50)tasks.length=50;
+  saveTasks(tasks);
+  refreshTaskDisplay();
+  return task.id;
+}
+function updateTaskProgress(taskId,progress,status='processing'){
+  const tasks=getTasks();
+  const t=tasks.find(x=>x.id===taskId);
+  if(t){t.progress=Math.min(100,Math.max(0,progress));t.status=status;t.updatedAt=Date.now();saveTasks(tasks);refreshTaskDisplay()}
+}
+function completeTask(taskId,result=null){
+  const tasks=getTasks();
+  const t=tasks.find(x=>x.id===taskId);
+  if(t){t.progress=100;t.status='completed';t.updatedAt=Date.now();t.result=result;saveTasks(tasks);refreshTaskDisplay();toast('✅ '+t.title+' 完成了！')}
+}
+function failTask(taskId,error){
+  const tasks=getTasks();
+  const t=tasks.find(x=>x.id===taskId);
+  if(t){t.status='failed';t.updatedAt=Date.now();t.error=error;saveTasks(tasks);refreshTaskDisplay();toast('❌ '+t.title+' 失败了')}
+}
+function getActiveTasks(){return getTasks().filter(t=>t.status==='pending'||t.status==='processing')}
+function clearCompletedTasks(){const tasks=getTasks().filter(t=>t.status!=='completed'&&t.status!=='failed');saveTasks(tasks);refreshTaskDisplay()}
+function renderTaskPanel(){
+  const tasks=getTasks();
+  const active=tasks.filter(t=>t.status==='pending'||t.status==='processing');
+  const recent=tasks.filter(t=>t.status==='completed'||t.status==='failed').slice(0,3);
+  if(active.length===0&&recent.length===0)return '';
+  let html='<div class="task-panel">';
+  html+='<div class="task-panel-header"><span style="display:flex;align-items:center;gap:8px;font-weight:600"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>任务进度';
+  if(active.length>0)html+='<span class="task-badge">'+active.length+' 进行中</span>';
+  html+='</span>';
+  if(tasks.filter(t=>t.status==='completed'||t.status==='failed').length>0)html+='<button class="btn btn-sm btn-outline" onclick="clearCompletedTasks()">清除已完成</button>';
+  html+='</div><div class="task-list">';
+  active.forEach(t=>{
+    const type=TASK_TYPES[t.type]||TASK_TYPES.transcript;
+    const elapsed=Math.floor((Date.now()-t.createdAt)/1000);
+    const remain=t.estimatedSeconds?Math.max(0,t.estimatedSeconds-elapsed):0;
+    const remainStr=remain>60?Math.ceil(remain/60)+'分钟':remain+'秒';
+    html+='<div class="task-item task-'+t.status+'">';
+    html+='<div class="task-icon" style="background:'+type.color+'20;color:'+type.color+'">'+type.icon+'</div>';
+    html+='<div class="task-info"><div class="task-title">'+escapeHtml(t.title)+'</div>';
+    html+='<div class="task-meta">'+type.name+(t.status==='processing'?' · 预计还需'+remainStr:' · 等待中')+'</div>';
+    html+='<div class="task-progress-bar"><div class="task-progress-fill" style="width:'+t.progress+'%;background:'+type.color+'"></div></div></div>';
+    html+='<div class="task-percent">'+t.progress+'%</div></div>';
+  });
+  recent.forEach(t=>{
+    const type=TASK_TYPES[t.type]||TASK_TYPES.transcript;
+    const time=new Date(t.updatedAt);
+    const timeStr=String(time.getHours()).padStart(2,'0')+':'+String(time.getMinutes()).padStart(2,'0');
+    html+='<div class="task-item task-'+t.status+'" style="opacity:0.7">';
+    html+='<div class="task-icon" style="background:'+type.color+'20;color:'+type.color+'">'+type.icon+'</div>';
+    html+='<div class="task-info"><div class="task-title">'+escapeHtml(t.title)+'</div>';
+    html+='<div class="task-meta">'+(t.status==='completed'?'✅ 已完成':'❌ 失败')+' · '+timeStr+'</div></div>';
+    html+='<div class="task-percent" style="color:var(--ink3)">'+(t.status==='completed'?'100%':'—')+'</div></div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+function refreshTaskDisplay(){
+  const panel=document.getElementById('taskPanel');
+  if(panel)panel.innerHTML=renderTaskPanel();
+}
+setInterval(()=>{if(currentView==='dashboard')refreshTaskDisplay()},5000);
+
 /* ===== IndexedDB ===== */
 let db=null;
 function dbInit(){return new Promise((resolve,reject)=>{
@@ -694,7 +791,7 @@ registerView('dashboard',async function(main){
         <div class="tt-cell tt-time" style="font-size:10px">${p}<br><span style="color:var(--ink3)">${timeStr}</span></div>
         <div class="tt-cell ${cls?'tt-lesson':'tt-empty'} ${isNext?'tt-next':''} ${isCurrent?'tt-current':''}" ${cls?'onclick="navigate(\'lesson\')"':''}>
           ${escapeHtml(cls)||'—'}
-          ${isNext?'<div style="font-size:9px;color:var(--warning);font-weight:600;margin-top:2px">'+Math.ceil(nextClass.countdown/60)+'分钟后</div>':''}
+          ${isNext?'<div style="font-size:9px;color:var(--warning);font-weight:600;margin-top:2px">'+nextClass.countdown+'分钟后</div>':''}
           ${isCurrent?'<div style="font-size:9px;color:var(--success);font-weight:600;margin-top:2px">进行中</div>':''}
         </div>
       </div>`;
@@ -712,7 +809,7 @@ registerView('dashboard',async function(main){
   }else if(nextClass){
     reminderBanner=`<div class="reminder-banner" style="background:linear-gradient(135deg,var(--warning-bg),#fff);border-color:var(--warning)">
       <div class="reminder-icon" style="background:var(--warning)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div class="reminder-content"><div class="reminder-title">下节课：${escapeHtml(nextClass.cls)}</div><div class="reminder-sub">${nextClass.name} · ${nextClass.time.start} 开始 · 还有 ${Math.ceil(nextClass.countdown/60)} 分钟</div></div>
+      <div class="reminder-content"><div class="reminder-title">下节课：${escapeHtml(nextClass.cls)}</div><div class="reminder-sub">${nextClass.name} · ${nextClass.time.start} 开始 · 还有 ${nextClass.countdown} 分钟</div></div>
       <button class="btn btn-sm btn-primary" onclick="navigate('lesson')">去备课</button>
     </div>`;
   }else if(todayClasses.length>0){
@@ -873,6 +970,7 @@ registerView('dashboard',async function(main){
     </div>
     ${reminderBanner}
     ${todoBannerHtml}
+    <div id="taskPanel">${renderTaskPanel()}</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       <div class="stat-box"><div class="stat-num">${lessons.length}</div><div class="stat-label">教案数</div></div>
       <div class="stat-box"><div class="stat-num">${students.length}</div><div class="stat-label">学生数</div></div>
@@ -2141,16 +2239,24 @@ async function saveAnalysis(){
 async function analyzeVideo(){
   const url=$('#an_videoUrl')?.value||currentAnalysis.videoUrl;
   if(!url){toast('请先粘贴视频链接');return}
-  toast('正在解析视频...（演示模式：生成分析框架）');
-  await new Promise(r=>setTimeout(r,1500));
+  const taskId=createTask('transcript','解析视频：'+(currentAnalysis.title||'课堂视频'),120);
+  updateTaskProgress(taskId,10,'processing');
+  toast('正在解析视频...');
+  await new Promise(r=>setTimeout(r,800));
+  updateTaskProgress(taskId,30,'processing');
   // 基于视频链接生成分析框架
   const a=currentAnalysis;
   const topic=a.title.replace(/[（(].*[）)]/g,'').trim()||'生物课堂';
+  updateTaskProgress(taskId,50,'processing');
+  await new Promise(r=>setTimeout(r,600));
   a.objectives=`1. 知识目标：阐明${topic}的核心概念和原理\n2. 能力目标：通过观察和分析培养科学思维\n3. 情感目标：体会生命科学的严谨与美妙`;
   a.keyPoints=`${topic}的核心概念和关键过程`;
   a.difficultPoints=`${topic}过程中抽象概念的理解与应用`;
   a.updatedAt=Date.now();
+  updateTaskProgress(taskId,80,'processing');
   await dbPut('classAnalyses',a);
+  updateTaskProgress(taskId,100,'processing');
+  completeTask(taskId);
   toast('视频解析完成！已生成课堂信息框架');
   renderAnalysisTab();
 }
@@ -3372,6 +3478,9 @@ async function generateAnswerPPT(){
     return;
   }
   
+  const taskId=createTask('answer2ppt','生成PPT：'+(title||'试卷讲解'),90);
+  updateTaskProgress(taskId,10,'processing');
+  
   $('#pptGenerateBtn').disabled=true;
   $('#pptGenerateStatus').style.display='block';
   $('#pptResult').style.display='none';
@@ -3379,6 +3488,7 @@ async function generateAnswerPPT(){
   try{
     $('#pptStatusText').textContent='AI正在分析答案...';
     $('#pptStatusDetail').textContent='正在识别题目结构、答案和知识点...';
+    updateTaskProgress(taskId,25,'processing');
     
     const apiKey=lsGet('doubao_api_key','');
     const endpointId=lsGet('doubao_endpoint_id','');
@@ -3445,6 +3555,7 @@ ${content}
     
     const data=await resp.json();
     let resultText=data.choices?.[0]?.message?.content||'';
+    updateTaskProgress(taskId,60,'processing');
     
     // 提取JSON
     const jsonMatch=resultText.match(/\{[\s\S]*\}/);
@@ -3454,6 +3565,7 @@ ${content}
     
     const pptData=JSON.parse(jsonMatch[0]);
     currentPPTData=pptData;
+    updateTaskProgress(taskId,80,'processing');
     
     $('#pptStatusText').textContent='生成成功！';
     $('#pptStatusDetail').textContent=`共生成 ${pptData.slides.length} 页PPT`;
@@ -3473,6 +3585,8 @@ ${content}
       }
     });
     $('#pptOutline').innerHTML=outlineHtml;
+    updateTaskProgress(taskId,100,'processing');
+    completeTask(taskId,pptData.slides.length+'页PPT');
     
     setTimeout(()=>{
       $('#pptGenerateStatus').style.display='none';
@@ -3483,6 +3597,7 @@ ${content}
     $('#pptStatusText').textContent='生成失败';
     $('#pptStatusDetail').textContent=e.message;
     toast('生成失败：'+e.message);
+    failTask(taskId,e.message);
   }finally{
     $('#pptGenerateBtn').disabled=false;
   }
