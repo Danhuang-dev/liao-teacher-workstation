@@ -5115,30 +5115,82 @@ async function processPetQuery(text){
   // 显示思考状态
   setPetState('think');
   
+  // ===== 第一步：本地快速检测高优先级查询（课表、待办查询）=====
+  // 课表查询：包含"课"且包含疑问词或"表/安排/有/上"
+  const isLessonQuery=/(课|课程|课表|上课)/.test(text)&&/(什么|哪些|表|安排|有|上|啥|怎么|如何)/.test(text);
+  // 待办查询
+  const isTodoQuery=/(待办|任务|要做什么|还有什么|有什么事|事情|未完成|完成了多少)/.test(text);
+  
+  if(isLessonQuery){
+    const lessonReply=await queryLessonSchedule(text);
+    return lessonReply + '\n\n— 蛋黄AI思考 🧠';
+  }
+  
+  if(isTodoQuery){
+    const todos=await dbGetAll('todos');
+    const pending=todos.filter(td=>!td.done);
+    const done=todos.filter(td=>td.done);
+    let reply='';
+    if(pending.length===0){
+      reply='✅ 目前没有待办事项，工作都完成啦！';
+    }else{
+      reply=`📋 您有${pending.length}项待办：\n${pending.slice(0,10).map((td,i)=>`${i+1}. ${td.title}${td.dueDate?'（'+td.dueDate+'）':''}${td.priority==='高'?' 🔴':''}`).join('\n')}`;
+    }
+    if(done.length>0)reply+=`\n\n✅ 已完成${done.length}项`;
+    return reply + '\n\n— 蛋黄AI思考 🧠';
+  }
+  
+  // ===== 第二步：调用AI处理其他查询 =====
   if(!hasAPI){
-    // 没有配置API，用本地处理
     const localReply=await processMultiTask(text);
     return localReply + '\n\n— 蛋黄本地模式 ⚡（去设置配置API后可启用AI思考）';
   }
   
-  // 有API，优先调用AI
   try{
-    const prompt=`你是高中生物老师廖艳的智能助理蛋黄，一只可爱的土松犬。请分析用户的话，判断意图并执行。
+    // 获取当前课表和待办，作为上下文给AI
+    const timetable=lsGet('timetable',getDefaultTimetable());
+    const todos=await dbGetAll('todos');
+    const pendingTodos=todos.filter(td=>!td.done).slice(0,5);
+    
+    const today=new Date();
+    const dayNames=['周日','周一','周二','周三','周四','周五','周六'];
+    const todayStr=`${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 ${dayNames[today.getDay()]}`;
+    
+    // 构建课表摘要
+    let timetableSummary='';
+    const periodNames=['早读','第1节','第2节','第3节','第4节','第5节','第6节','第7节','第8节','第9节'];
+    for(let d=0;d<5;d++){
+      const dayClasses=[];
+      timetable[d]?.forEach((cls,i)=>{
+        if(cls&&i!==5)dayClasses.push(`${periodNames[i]}:${cls}`);
+      });
+      if(dayClasses.length>0){
+        timetableSummary+=`${dayNames[d+1]}: ${dayClasses.join('、')}\n`;
+      }
+    }
+    
+    const prompt=`你是高中生物老师廖艳的智能助理蛋黄，一只可爱的土松犬。
+
+当前时间：${todayStr}
+
+廖老师的课表：
+${timetableSummary}
+当前待办（${pendingTodos.length}项）：
+${pendingTodos.map((td,i)=>`${i+1}. ${td.title}${td.dueDate?'（'+td.dueDate+'）':''}`).join('\n')||'无'}
 
 用户说：${text}
 
-请按以下格式回复（不要输出其他内容）：
-【回复】给用户的回复内容（亲切自然，20-100字）
+请分析用户意图，按以下格式回复（不要输出其他内容）：
+【回复】给用户的亲切回复（20-100字，如果是课表/待办查询要给出具体信息）
 【分类】todo/memo/student/leader/lesson/homework/schedule/chat
-【标题】简短标题（如果是待办/备忘）
-【内容】详细内容（如果是待办/备忘）
+【标题】简短标题（如果是待办/备忘，没有则填"无"）
+【内容】详细内容（如果是待办/备忘，没有则填"无"）
 【日期】截止日期（如"明天"、"下周一"，没有则填"无"）
 【优先级】高/中/低`;
     
-    const result=await callDoubaoDirect([{role:'user',content:prompt}],0.5,1000,15000);
+    const result=await callDoubaoDirect([{role:'user',content:prompt}],0.5,1200,20000);
     
     if(!result){
-      // API调用失败，降级到本地
       const localReply=await processMultiTask(text);
       return localReply + '\n\n— 蛋黄本地模式 ⚡（AI连接失败，已自动降级）';
     }
@@ -5166,18 +5218,20 @@ async function processPetQuery(text){
     if(priorityMatch)priority=priorityMatch[1].trim();
     
     // 执行动作
-    if(category==='todo'&&title){
-      const todo={id:Date.now().toString(),title,content:content||title,dueDate:dueDate!=='无'?dueDate:'',priority:priority||'中',done:false,createdAt:Date.now()};
+    if(category==='lesson'){
+      // 课表查询用本地处理（更准确）
+      const lessonReply=await queryLessonSchedule(text);
+      return lessonReply + '\n\n— 蛋黄AI思考 🧠';
+    }
+    
+    if(category==='todo'&&title&&title!=='无'){
+      const todo={id:Date.now().toString(),title,content:content&&content!=='无'?content:title,dueDate:dueDate&&dueDate!=='无'?dueDate:'',priority:priority||'中',done:false,createdAt:Date.now()};
       await dbPut('todos',todo);
       if(!reply)reply=`好的！已帮你记下待办：「${title}」${dueDate&&dueDate!=='无'?'（'+dueDate+'）':''}`;
-    }else if(category==='memo'&&title){
-      const memo={id:Date.now().toString(),title,content:content||title,createdAt:Date.now()};
+    }else if(category==='memo'&&title&&title!=='无'){
+      const memo={id:Date.now().toString(),title,content:content&&content!=='无'?content:title,createdAt:Date.now()};
       await dbPut('memos',memo);
       if(!reply)reply=`好的！已帮你记下备忘：「${title}」`;
-    }else if(category==='lesson'){
-      // 课表查询用本地处理
-      const localReply=await processMultiTask(text);
-      return localReply + '\n\n— 蛋黄AI思考 🧠';
     }
     
     if(!reply)reply=result.slice(0,200);
@@ -5189,6 +5243,79 @@ async function processPetQuery(text){
     const localReply=await processMultiTask(text);
     return localReply + '\n\n— 蛋黄本地模式 ⚡（AI出错，已自动降级）';
   }
+}
+
+// 课表查询专用函数
+async function queryLessonSchedule(text){
+  const timetable=lsGet('timetable',getDefaultTimetable());
+  const today=new Date();
+  
+  function getDayOffset(t){
+    if(/明天|明日/.test(t))return 1;
+    if(/后天/.test(t))return 2;
+    if(/大后天/.test(t))return 3;
+    if(/周一|星期一/.test(t))return (1-today.getDay()+7)%7;
+    if(/周二|星期二/.test(t))return (2-today.getDay()+7)%7;
+    if(/周三|星期三/.test(t))return (3-today.getDay()+7)%7;
+    if(/周四|星期四/.test(t))return (4-today.getDay()+7)%7;
+    if(/周五|星期五/.test(t))return (5-today.getDay()+7)%7;
+    if(/周六|星期六/.test(t))return (6-today.getDay()+7)%7;
+    if(/周日|星期日|星期天/.test(t))return (0-today.getDay()+7)%7;
+    if(/今天|今日/.test(t))return 0;
+    return 0; // 默认今天
+  }
+  
+  const dayOffset=getDayOffset(text);
+  const targetDate=new Date(today.getTime()+dayOffset*86400000);
+  const dayNames=['周日','周一','周二','周三','周四','周五','周六'];
+  const dayLabel=dayOffset===0?'今天':(dayOffset===1?'明天':(dayOffset===2?'后天':dayNames[targetDate.getDay()]));
+  
+  const dayIdx=targetDate.getDay()-1;
+  if(dayIdx<0||dayIdx>4){
+    return `📅 ${dayLabel}（${targetDate.getMonth()+1}月${targetDate.getDate()}日）是周末，好好休息吧～`;
+  }
+  
+  const periodNames=['早读','第1节','第2节','第3节','第4节','午自习','第5节','第6节','第7节','第8节','第9节'];
+  const timeSlots=['7:30-8:00','8:10-8:55','9:05-9:50','10:10-10:55','11:05-11:50','12:00-13:30','14:00-14:45','14:55-15:40','15:50-16:35','16:45-17:30','18:30-21:00'];
+  
+  const classes=[];
+  timetable[dayIdx]?.forEach((cls,i)=>{
+    if(cls&&i!==5){
+      classes.push(`${periodNames[i]}（${timeSlots[i]}）：${cls}`);
+    }
+  });
+  
+  if(classes.length===0){
+    return `📅 ${dayLabel}（${targetDate.getMonth()+1}月${targetDate.getDate()}日）没有课安排，可以专心备课或休息～`;
+  }
+  
+  let msg=`📅 ${dayLabel}（${targetDate.getMonth()+1}月${targetDate.getDate()}日）有${classes.length}节课：\n\n${classes.join('\n')}`;
+  
+  // 添加备课建议
+  const bioClasses=classes.filter(c=>c.includes('生物')||c.includes('金阊'));
+  if(bioClasses.length>0){
+    msg+=`\n\n💡 提示：有${bioClasses.length}节生物课，可以去「教师备课」准备教案哦～`;
+  }
+  
+  // 下一节课提醒
+  if(dayOffset===0){
+    const now=today.getHours()*60+today.getMinutes();
+    for(let i=0;i<classes.length;i++){
+      const timeMatch=classes[i].match(/(\d+):(\d+)-/);
+      if(timeMatch){
+        const classTime=parseInt(timeMatch[1])*60+parseInt(timeMatch[2]);
+        if(classTime>now){
+          const minutesLeft=classTime-now;
+          const hours=Math.floor(minutesLeft/60);
+          const mins=minutesLeft%60;
+          msg+=`\n\n⏰ 距离下一节课还有 ${hours>0?hours+'小时':''}${mins}分钟`;
+          break;
+        }
+      }
+    }
+  }
+  
+  return msg;
 }
 
 // 多任务处理核心
