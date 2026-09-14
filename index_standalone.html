@@ -810,6 +810,19 @@ registerView('dashboard',async function(main){
       if(cls && i!==5)todayClasses.push({period:i,name:periodNames[i],cls,time:periodTimes[i]})
     })
   }
+  
+  // 计算明日课程
+  const tomorrow=new Date(today.getTime()+86400000);
+  const tomorrowIdx=tomorrow.getDay()-1;
+  const isTomorrowWeekend=tomorrowIdx<0||tomorrowIdx>4;
+  const tomorrowClasses=[];
+  if(!isTomorrowWeekend){
+    timetable[tomorrowIdx]?.forEach((cls,i)=>{
+      if(cls && i!==5)tomorrowClasses.push({period:i,name:periodNames[i],cls,time:periodTimes[i]})
+    })
+  }
+  const tomorrowDayNames=['周日','周一','周二','周三','周四','周五','周六'];
+  const tomorrowLabel=tomorrowDayNames[tomorrow.getDay()];
   // 计算下节课/当前课
   const now=new Date();
   const nowMin=now.getHours()*60+now.getMinutes();
@@ -1062,6 +1075,20 @@ registerView('dashboard',async function(main){
         <div class="timetable">
           <div class="tt-header"><div class="tt-cell tt-head">节次</div><div class="tt-cell tt-head">时间</div><div class="tt-cell tt-head">班级</div></div>
           ${ttHtml}
+        </div>
+        <!-- 明日课程预览 -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <span style="font-size:13px;font-weight:600;color:var(--ink2)">📅 明日（${tomorrowLabel}）课程预览</span>
+            <span style="font-size:11px;color:var(--ink3)">${tomorrowClasses.length}节课</span>
+          </div>
+          ${isTomorrowWeekend?'<div style="text-align:center;padding:10px;color:var(--ink3);font-size:12px">明天是周末，好好休息 🌿</div>':
+            tomorrowClasses.length===0?'<div style="text-align:center;padding:10px;color:var(--ink3);font-size:12px">明天没有课，可以专心备课 ✨</div>':
+            `<div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${tomorrowClasses.map(c=>`<span style="background:var(--primary-bg);color:var(--primary-dark);padding:5px 10px;border-radius:8px;font-size:11px;font-weight:500">${c.name} ${c.cls}</span>`).join('')}
+            </div>
+            <div style="margin-top:8px;font-size:11px;color:var(--ink3)">💡 明天有${tomorrowClasses.length}节课，记得提前准备教案哦～</div>`
+          }
         </div>
       </div>
       <div class="card">
