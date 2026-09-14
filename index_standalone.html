@@ -1408,6 +1408,22 @@ registerView('classAnalysis',async function(main){
         <button class="btn btn-primary" onclick="newAnalysis()">+ 新建分析</button>
       </div>
     </div>
+    <div class="card" id="aiServiceStatus" style="margin-bottom:16px;border:2px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:20px" id="aiServiceIcon">⏳</div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-weight:700;font-size:14px" id="aiServiceTitle">正在检测AI分析服务...</div>
+          <div style="font-size:12px;color:var(--ink3)" id="aiServiceDesc">服务地址：${AI_API_BASE}</div>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="testAnalysisService()">🔄 重新检测</button>
+      </div>
+      <div id="aiServiceHelp" style="display:none;margin-top:12px;padding:12px;background:var(--warning-bg);border-radius:8px;font-size:12px;color:var(--ink2);line-height:1.8">
+        <strong>⚠️ AI分析服务未连接，解决方案：</strong><br>
+        <strong>方案一（推荐）：</strong>点击「设置」→「AI课堂分析服务」→ 一键部署到Render（免费，手机可用）<br>
+        <strong>方案二：</strong>在电脑上运行 <code style="background:#fff;padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code>，然后用电脑访问<br>
+        <strong>方案三：</strong>查看下方已有的内置示例分析（不需要服务）
+      </div>
+    </div>
     <div class="analysis-hero">
       <div style="font-size:18px;font-weight:800;color:var(--ink);margin-bottom:6px">🎬 名师课堂智能拆解系统</div>
       <div style="font-size:13px;color:var(--ink2);max-width:500px;line-height:1.6">粘贴名师教学视频链接，自动生成逐字稿（带语气/停顿/重音标记）、教学流程时间轴、思维导图、教学技巧库和互动设计分析，一键转化为您的专属教案。</div>
@@ -1436,7 +1452,39 @@ registerView('classAnalysis',async function(main){
       `).join(''):'<div class="empty-state"><p>还没有课堂分析，点击"新建分析"开始拆解名师课堂</p></div>'}
     </div>
   `;
+  // 自动检测服务状态
+  setTimeout(testAnalysisServiceDisplay,500);
 });
+
+// 检测并显示AI分析服务状态
+async function testAnalysisServiceDisplay(){
+  const icon=$('#aiServiceIcon');
+  const title=$('#aiServiceTitle');
+  const desc=$('#aiServiceDesc');
+  const help=$('#aiServiceHelp');
+  if(!icon)return;
+  try{
+    const resp=await fetch(AI_API_BASE+'/api/health',{signal:AbortSignal.timeout(5000)});
+    const data=await resp.json();
+    if(data.status==='ok'){
+      icon.textContent='✅';
+      icon.style.background='var(--success-bg)';
+      title.textContent='AI分析服务已连接';
+      title.style.color='var(--success)';
+      desc.textContent=`服务地址：${AI_API_BASE} · 模型：${data.model_loaded?'已加载':'待加载'}`;
+      help.style.display='none';
+      return;
+    }
+    throw new Error('服务异常');
+  }catch(e){
+    icon.textContent='❌';
+    icon.style.background='var(--danger-bg)';
+    title.textContent='AI分析服务未连接';
+    title.style.color='var(--danger)';
+    desc.textContent=`服务地址：${AI_API_BASE} · 无法连接`;
+    help.style.display='block';
+  }
+}
 
 async function newAnalysis(){
   const url=prompt('请粘贴名师教学视频链接（B站/优酷/腾讯视频等）：');
@@ -4887,26 +4935,87 @@ function showAILoading(title){
 }
 
 async function processPetQuery(text){
-  // 并行：API调用 + 本地处理，谁先回返回谁（但API优先）
-  const apiPromise=callAI('/api/chat',{text});
-  const localPromise=processMultiTask(text);
+  const apiKey=lsGet('doubao_api_key','');
+  const endpointId=lsGet('doubao_endpoint_id','');
+  const hasAPI=apiKey&&endpointId;
   
-  // 等待API，但最多等8秒
-  const timeoutPromise=new Promise(resolve=>setTimeout(()=>resolve('timeout'),8000));
+  // 显示思考状态
+  setPetState('think');
   
-  try{
-    const result=await Promise.race([apiPromise,timeoutPromise]);
-    if(result!=='timeout' && result && !result.error && result.reply){
-      await autoSaveByCategory(result, text);
-      return result.reply + '\n\n— 蛋黄AI思考 🧠';
-    }
-  }catch(e){
-    console.log('API调用失败，使用本地处理:',e);
+  if(!hasAPI){
+    // 没有配置API，用本地处理
+    const localReply=await processMultiTask(text);
+    return localReply + '\n\n— 蛋黄本地模式 ⚡（去设置配置API后可启用AI思考）';
   }
   
-  // API超时或失败，使用本地处理
-  const localReply=await localPromise;
-  return localReply + '\n\n— 蛋黄快速响应 ⚡';
+  // 有API，优先调用AI
+  try{
+    const prompt=`你是高中生物老师廖艳的智能助理蛋黄，一只可爱的土松犬。请分析用户的话，判断意图并执行。
+
+用户说：${text}
+
+请按以下格式回复（不要输出其他内容）：
+【回复】给用户的回复内容（亲切自然，20-100字）
+【分类】todo/memo/student/leader/lesson/homework/schedule/chat
+【标题】简短标题（如果是待办/备忘）
+【内容】详细内容（如果是待办/备忘）
+【日期】截止日期（如"明天"、"下周一"，没有则填"无"）
+【优先级】高/中/低`;
+    
+    const result=await callDoubaoDirect([{role:'user',content:prompt}],0.5,1000,15000);
+    
+    if(!result){
+      // API调用失败，降级到本地
+      const localReply=await processMultiTask(text);
+      return localReply + '\n\n— 蛋黄本地模式 ⚡（AI连接失败，已自动降级）';
+    }
+    
+    // 解析AI回复
+    let reply='';
+    let category='chat';
+    let title='';
+    let content='';
+    let dueDate='';
+    let priority='中';
+    
+    const replyMatch=result.match(/【回复】([\s\S]*?)(?=【|$)/);
+    const categoryMatch=result.match(/【分类】(\w+)/);
+    const titleMatch=result.match(/【标题】([\s\S]*?)(?=【|$)/);
+    const contentMatch=result.match(/【内容】([\s\S]*?)(?=【|$)/);
+    const dateMatch=result.match(/【日期】([\s\S]*?)(?=【|$)/);
+    const priorityMatch=result.match(/【优先级】([\s\S]*?)(?=【|$)/);
+    
+    if(replyMatch)reply=replyMatch[1].trim();
+    if(categoryMatch)category=categoryMatch[1].trim();
+    if(titleMatch)title=titleMatch[1].trim();
+    if(contentMatch)content=contentMatch[1].trim();
+    if(dateMatch)dueDate=dateMatch[1].trim();
+    if(priorityMatch)priority=priorityMatch[1].trim();
+    
+    // 执行动作
+    if(category==='todo'&&title){
+      const todo={id:Date.now().toString(),title,content:content||title,dueDate:dueDate!=='无'?dueDate:'',priority:priority||'中',done:false,createdAt:Date.now()};
+      await dbPut('todos',todo);
+      if(!reply)reply=`好的！已帮你记下待办：「${title}」${dueDate&&dueDate!=='无'?'（'+dueDate+'）':''}`;
+    }else if(category==='memo'&&title){
+      const memo={id:Date.now().toString(),title,content:content||title,createdAt:Date.now()};
+      await dbPut('memos',memo);
+      if(!reply)reply=`好的！已帮你记下备忘：「${title}」`;
+    }else if(category==='lesson'){
+      // 课表查询用本地处理
+      const localReply=await processMultiTask(text);
+      return localReply + '\n\n— 蛋黄AI思考 🧠';
+    }
+    
+    if(!reply)reply=result.slice(0,200);
+    
+    return reply + '\n\n— 蛋黄AI思考 🧠';
+    
+  }catch(e){
+    console.error('AI处理失败:',e);
+    const localReply=await processMultiTask(text);
+    return localReply + '\n\n— 蛋黄本地模式 ⚡（AI出错，已自动降级）';
+  }
 }
 
 // 多任务处理核心
