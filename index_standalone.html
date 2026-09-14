@@ -48,6 +48,18 @@ input,textarea,select{font-family:inherit;font-size:14px}
 .page-subtitle{font-size:13px;color:var(--ink3);margin-top:4px}
 .btn-group{display:flex;gap:8px;flex-wrap:wrap}
 
+/* ===== 工作台首页 Hero 区 ===== */
+.dashboard-hero{background:linear-gradient(135deg,var(--primary),var(--accent));border-radius:16px;padding:20px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 4px 20px rgba(155,142,196,0.3)}
+.hero-left{color:#fff}
+.hero-greeting{font-size:22px;font-weight:800;margin-bottom:6px}
+.hero-date{font-size:13px;opacity:0.9;margin-bottom:4px}
+.hero-weather{font-size:12px;opacity:0.85;background:rgba(255,255,255,0.15);padding:4px 12px;border-radius:20px;display:inline-block}
+.hero-right{display:flex;gap:8px;flex-wrap:wrap}
+.hero-right .btn{background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.3)}
+.hero-right .btn:hover{background:rgba(255,255,255,0.3)}
+.hero-right .ai-btn{background:rgba(255,255,255,0.25);color:#fff;border:1px solid rgba(255,255,255,0.4)}
+.todo-badge{background:var(--danger);color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:4px}
+
 /* ===== 按钮 ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:600;transition:all .2s;border:1px solid transparent;white-space:nowrap}
 .btn-primary{background:var(--primary);color:#fff}
@@ -582,6 +594,38 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).substr(
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
 function lsSet(k,v){localStorage.setItem(k,JSON.stringify(v))}
 
+/* ===== 人文模块：问候语、时间、天气 ===== */
+function getGreeting(){
+  const h=new Date().getHours();
+  if(h<6)return '夜深了';
+  if(h<9)return '早上好';
+  if(h<12)return '上午好';
+  if(h<14)return '中午好';
+  if(h<18)return '下午好';
+  if(h<22)return '晚上好';
+  return '夜深了';
+}
+function getWeatherInfo(){
+  // 模拟天气数据（实际使用时可接入天气API）
+  const weathers=[
+    {icon:'☀️',text:'晴',temp:'26°C',tip:'适合上课'},
+    {icon:'⛅',text:'多云',temp:'24°C',tip:'记得带伞'},
+    {icon:'🌤️',text:'晴间多云',temp:'25°C',tip:'天气不错'},
+    {icon:'🌧️',text:'小雨',temp:'22°C',tip:'出门带伞'},
+    {icon:'🌻',text:'晴朗',temp:'28°C',tip:'注意防晒'}
+  ];
+  const day=new Date().getDate();
+  return weathers[day%weathers.length];
+}
+function updateClock(){
+  const el=document.getElementById('liveClock');
+  if(el){
+    const now=new Date();
+    el.textContent=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
+  }
+}
+setInterval(updateClock,1000);
+
 /* ===== 任务进度管理系统 ===== */
 const TASK_TYPES={
   transcript:{icon:'🎙️',name:'逐字稿生成',color:'var(--primary)'},
@@ -783,12 +827,13 @@ registerView('dashboard',async function(main){
   if(!isWeekend){
     timetable[dayIdx]?.forEach((cls,i)=>{
       const p=periodNames[i];
-      if(i===5){ttHtml+=`<div class="tt-row tt-lunch"><div class="tt-cell" colspan="2" style="grid-column:1/-1;background:#F0F1F3;color:#9CA3AF;font-size:11px;text-align:center;padding:4px">午 休</div></div>`;return}
+      if(i===5){ttHtml+=`<div class="tt-row tt-lunch"><div class="tt-cell" colspan="3" style="grid-column:1/-1;background:#F0F1F3;color:#9CA3AF;font-size:11px;text-align:center;padding:4px">午 休</div></div>`;return}
       const isNext=nextClass&&nextClass.period===i;
       const isCurrent=currentClass&&currentClass.period===i;
-      const timeStr=periodTimes[i]?`${periodTimes[i].start}`:'';
+      const timeStr=periodTimes[i]?`${periodTimes[i].start}-${periodTimes[i].end}`:'';
       ttHtml+=`<div class="tt-row">
-        <div class="tt-cell tt-time" style="font-size:10px">${p}<br><span style="color:var(--ink3)">${timeStr}</span></div>
+        <div class="tt-cell tt-time" style="font-size:11px;font-weight:600">${p}</div>
+        <div class="tt-cell tt-time" style="font-size:10px;color:var(--ink3)">${timeStr}</div>
         <div class="tt-cell ${cls?'tt-lesson':'tt-empty'} ${isNext?'tt-next':''} ${isCurrent?'tt-current':''}" ${cls?'onclick="navigate(\'lesson\')"':''}>
           ${escapeHtml(cls)||'—'}
           ${isNext?'<div style="font-size:9px;color:var(--warning);font-weight:600;margin-top:2px">'+nextClass.countdown+'分钟后</div>':''}
@@ -796,6 +841,8 @@ registerView('dashboard',async function(main){
         </div>
       </div>`;
     })
+  }else{
+    ttHtml='<div style="padding:20px;text-align:center;color:var(--ink3);font-size:13px">周末休息，好好放松 🌿</div>';
   }
 
   // 提醒横幅
@@ -926,29 +973,55 @@ registerView('dashboard',async function(main){
     </div>`;
   }
 
-  // 右侧小待办
+  // 待办事项（合并今日+即将到期）
   let todoHtml='';
-  if(todayTodos.length){
-    todoHtml=todayTodos.map(t=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo('${t.id}')" style="width:16px;height:16px;accent-color:var(--primary)">
-      <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--ink3)':''}">${escapeHtml(t.title)}</span>
-      ${t.priority==='high'?'<span class="tag tag-danger">高</span>':t.priority==='medium'?'<span class="tag tag-warning">中</span>':''}
-    </div>`).join('');
+  if(pendingTodos.length>0){
+    todoHtml='<div style="max-height:280px;overflow-y:auto">';
+    if(todayTodoList.length>0){
+      todoHtml+='<div style="font-size:11px;color:var(--ink3);font-weight:600;margin:4px 0 6px;text-transform:uppercase;letter-spacing:0.5px">今日待办</div>';
+      todayTodoList.slice(0,5).forEach(t=>{
+        todoHtml+=`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div class="todo-checkbox ${t.done?'checked':''}" onclick="toggleTodo('${t.id}')" style="cursor:pointer">${t.done?'✓':''}</div>
+          <span style="flex:1;font-size:13px;${t.done?'text-decoration:line-through;color:var(--ink3)':''}">${escapeHtml(t.title)}</span>
+          ${t.priority==='high'?'<span class="tag tag-danger" style="font-size:10px">紧急</span>':t.priority==='medium'?'<span class="tag tag-warning" style="font-size:10px">重要</span>':''}
+        </div>`;
+      });
+    }
+    if(upcomingTodos.length>0){
+      todoHtml+='<div style="font-size:11px;color:var(--ink3);font-weight:600;margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.5px">即将到期</div>';
+      upcomingTodos.forEach(t=>{
+        todoHtml+=`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <div class="todo-checkbox" onclick="toggleTodo('${t.id}')" style="cursor:pointer"></div>
+          <span style="flex:1;font-size:12px;color:var(--ink2)">${escapeHtml(t.title)}</span>
+          <span style="font-size:10px;color:var(--ink3)">${t.dueDate}</span>
+        </div>`;
+      });
+    }
+    if(pendingTodos.length>8){
+      todoHtml+=`<div style="text-align:center;padding:8px;font-size:12px;color:var(--primary);cursor:pointer" onclick="navigate('schedule')">查看全部 ${pendingTodos.length} 项 →</div>`;
+    }
+    todoHtml+='</div>';
   }else{
-    // 没有今日待办时，显示明天课程预览
+    // 没有待办时，显示明天课程（带具体时间）
     const nowDate=new Date();
     const tomorrow=new Date(nowDate.getTime()+86400000);
     const tomorrowIdx=tomorrow.getDay()-1;
     const tomorrowClasses=[];
     if(tomorrowIdx>=0&&tomorrowIdx<=4){
-      timetable[tomorrowIdx]?.forEach((cls,i)=>{if(cls&&i!==5)tomorrowClasses.push(`${periodNames[i]}：${cls}`)});
+      timetable[tomorrowIdx]?.forEach((cls,i)=>{
+        if(cls&&i!==5&&periodTimes[i]){
+          tomorrowClasses.push({period:periodNames[i],cls,time:periodTimes[i].start})
+        }
+      });
     }
     if(tomorrowClasses.length>0){
-      todoHtml=`<div style="padding:12px 0">
-        <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">📅 明天有${tomorrowClasses.length}节课</div>
-        ${tomorrowClasses.slice(0,4).map(c=>`<div style="font-size:12px;color:var(--ink2);padding:4px 0">${c}</div>`).join('')}
-        ${tomorrowClasses.length>4?`<div style="font-size:11px;color:var(--ink3);margin-top:4px">还有${tomorrowClasses.length-4}节...</div>`:''}
+      todoHtml=`<div style="padding:8px 0">
+        <div style="font-size:12px;font-weight:600;color:var(--success);margin-bottom:10px">🎉 今日待办都完成啦！</div>
+        <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">📅 明天有 ${tomorrowClasses.length} 节课</div>
+        ${tomorrowClasses.map(c=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px;border-bottom:1px solid var(--border)">
+          <span style="color:var(--ink2)">${c.period} ${escapeHtml(c.cls)}</span>
+          <span style="color:var(--primary);font-weight:500">${c.time}</span>
+        </div>`).join('')}
         <button class="btn btn-sm btn-outline" style="width:100%;margin-top:10px" onclick="navigate('schedule')">查看完整课表</button>
       </div>`;
     }else{
@@ -956,20 +1029,23 @@ registerView('dashboard',async function(main){
     }
   }
 
+  const weather=getWeatherInfo();
+  const greeting=getGreeting();
+
   main.innerHTML=`
-    <div class="page-header">
-      <div>
-        <div class="page-title">工作台</div>
-        <div class="page-subtitle">${fmtDate(new Date())} ${weekDays[dayIdx]||'周末'}${isWeekend?' · 周末愉快':''}</div>
+    <div class="dashboard-hero">
+      <div class="hero-left">
+        <div class="hero-greeting">${greeting}，廖老师 👋</div>
+        <div class="hero-date">${fmtDate(new Date())} ${weekDays[dayIdx]||'周末'} · <span id="liveClock">--:--:--</span></div>
+        <div class="hero-weather">${weather.icon} ${weather.text} ${weather.temp} · ${weather.tip}</div>
       </div>
-      <div class="btn-group">
+      <div class="hero-right">
         <button class="ai-btn" onclick="generateDailyBriefing()">✨ AI每日简报</button>
         <button class="btn btn-primary" onclick="navigate('lesson')">新建教案</button>
         <button class="btn btn-success" onclick="navigate('homework')">布置作业</button>
       </div>
     </div>
     ${reminderBanner}
-    ${todoBannerHtml}
     <div id="taskPanel">${renderTaskPanel()}</div>
     <div class="grid grid-4" style="margin-bottom:16px">
       <div class="stat-box"><div class="stat-num">${lessons.length}</div><div class="stat-label">教案数</div></div>
@@ -979,19 +1055,19 @@ registerView('dashboard',async function(main){
     </div>
     <div class="grid grid-2">
       <div class="card">
-        <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>今日课程表</div>
-        <div class="timetable">
-          <div class="tt-header"><div class="tt-cell tt-head">节次</div><div class="tt-cell tt-head">${weekDays[dayIdx]||'—'}</div></div>
-          ${ttHtml}
+        <div class="card-title" style="justify-content:space-between">
+          <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>今日课程</span>
+          <button class="btn btn-sm btn-outline" onclick="editTimetable()">编辑</button>
         </div>
-        <div style="margin-top:10px;text-align:center">
-          <button class="btn btn-sm btn-outline" onclick="editTimetable()">编辑课程表</button>
+        <div class="timetable">
+          <div class="tt-header"><div class="tt-cell tt-head">节次</div><div class="tt-cell tt-head">时间</div><div class="tt-cell tt-head">班级</div></div>
+          ${ttHtml}
         </div>
       </div>
       <div class="card">
         <div class="card-title" style="justify-content:space-between">
-          <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>今日待办</span>
-          <button class="btn btn-sm btn-primary" onclick="addTodo()">+ 添加</button>
+          <span style="display:flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>待办事项 <span class="todo-badge">${pendingTodos.length}</span></span>
+          <button class="btn btn-sm btn-primary" onclick="quickAddTodo()">+ 添加</button>
         </div>
         ${todoHtml}
       </div>
