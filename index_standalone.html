@@ -835,27 +835,27 @@ registerView('dashboard',async function(main){
     if(nowMin<startMin&&!nextClass)nextClass={...c,countdown:startMin-nowMin};
   });
 
-  // 课表HTML
+  // 课表HTML - 只显示有课的节次
   let ttHtml='';
-  if(!isWeekend){
-    timetable[dayIdx]?.forEach((cls,i)=>{
-      const p=periodNames[i];
-      if(i===5){ttHtml+=`<div class="tt-row tt-lunch"><div class="tt-cell" colspan="3" style="grid-column:1/-1;background:#F0F1F3;color:#9CA3AF;font-size:11px;text-align:center;padding:4px">午 休</div></div>`;return}
-      const isNext=nextClass&&nextClass.period===i;
-      const isCurrent=currentClass&&currentClass.period===i;
-      const timeStr=periodTimes[i]?`${periodTimes[i].start}-${periodTimes[i].end}`:'';
-      ttHtml+=`<div class="tt-row">
-        <div class="tt-cell tt-time" style="font-size:11px;font-weight:600">${p}</div>
-        <div class="tt-cell tt-time" style="font-size:10px;color:var(--ink3)">${timeStr}</div>
-        <div class="tt-cell ${cls?'tt-lesson':'tt-empty'} ${isNext?'tt-next':''} ${isCurrent?'tt-current':''}" ${cls?'onclick="navigate(\'lesson\')"':''}>
-          ${escapeHtml(cls)||'—'}
-          ${isNext?'<div style="font-size:9px;color:var(--warning);font-weight:600;margin-top:2px">'+nextClass.countdown+'分钟后</div>':''}
-          ${isCurrent?'<div style="font-size:9px;color:var(--success);font-weight:600;margin-top:2px">进行中</div>':''}
+  if(!isWeekend&&todayClasses.length>0){
+    ttHtml=todayClasses.map(c=>{
+      const isNext=nextClass&&nextClass.period===c.period;
+      const isCurrent=currentClass&&currentClass.period===c.period;
+      const timeStr=`${c.time.start}-${c.time.end}`;
+      return `<div class="tt-row" style="border-bottom:1px solid var(--border-light)">
+        <div class="tt-cell tt-time" style="font-size:12px;font-weight:700;color:var(--primary);width:60px">${c.name}</div>
+        <div class="tt-cell tt-time" style="font-size:11px;color:var(--ink3);width:90px">${timeStr}</div>
+        <div class="tt-cell tt-lesson ${isNext?'tt-next':''} ${isCurrent?'tt-current':''}" onclick="navigate('lesson')" style="flex:1">
+          <div style="font-weight:600">${escapeHtml(c.cls)}</div>
+          ${isNext?'<div style="font-size:10px;color:var(--warning);font-weight:600;margin-top:2px">⏰ '+nextClass.countdown+'分钟后上课</div>':''}
+          ${isCurrent?'<div style="font-size:10px;color:var(--success);font-weight:600;margin-top:2px">🔴 正在上课</div>':''}
         </div>
       </div>`;
-    })
-  }else{
+    }).join('');
+  }else if(isWeekend){
     ttHtml='<div style="padding:20px;text-align:center;color:var(--ink3);font-size:13px">周末休息，好好放松 🌿</div>';
+  }else{
+    ttHtml='<div style="padding:20px;text-align:center;color:var(--ink3);font-size:13px">今天没有课，可以专心备课 ✨</div>';
   }
 
   // 提醒横幅
@@ -1079,16 +1079,20 @@ registerView('dashboard',async function(main){
         <!-- 明日课程预览 -->
         <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <span style="font-size:13px;font-weight:600;color:var(--ink2)">📅 明日（${tomorrowLabel}）课程预览</span>
+            <span style="font-size:13px;font-weight:600;color:var(--ink2)">📅 明日（${tomorrowLabel}）课程</span>
             <span style="font-size:11px;color:var(--ink3)">${tomorrowClasses.length}节课</span>
           </div>
           ${isTomorrowWeekend?'<div style="text-align:center;padding:10px;color:var(--ink3);font-size:12px">明天是周末，好好休息 🌿</div>':
             tomorrowClasses.length===0?'<div style="text-align:center;padding:10px;color:var(--ink3);font-size:12px">明天没有课，可以专心备课 ✨</div>':
-            `<div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${tomorrowClasses.map(c=>`<span style="background:var(--primary-bg);color:var(--primary-dark);padding:5px 10px;border-radius:8px;font-size:11px;font-weight:500">${c.name} ${c.cls}</span>`).join('')}
-            </div>
-            <div style="margin-top:8px;font-size:11px;color:var(--ink3)">💡 明天有${tomorrowClasses.length}节课，记得提前准备教案哦～</div>`
+            tomorrowClasses.map(c=>`
+              <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border-light)">
+                <span style="font-size:11px;font-weight:700;color:var(--accent);width:55px">${c.name}</span>
+                <span style="font-size:10px;color:var(--ink3);width:80px">${c.time.start}-${c.time.end}</span>
+                <span style="font-size:12px;font-weight:500;color:var(--ink);flex:1">${escapeHtml(c.cls)}</span>
+              </div>
+            `).join('')
           }
+          ${tomorrowClasses.length>0?'<div style="margin-top:8px;font-size:11px;color:var(--ink3)">💡 明天有'+tomorrowClasses.length+'节课，记得提前准备教案哦～</div>':''}
         </div>
       </div>
       <div class="card">
