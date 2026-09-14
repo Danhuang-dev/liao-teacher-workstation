@@ -2545,57 +2545,126 @@ function renderTranscriptReadMode(lines){
   if(!lines||lines.length===0){
     return '<div class="empty-state"><p>还没有逐字稿，点击"智能生成"开始</p></div>';
   }
-  // 数据已是简体，直接使用
-  const optimized=lines;
   
-  // 按教学环节自动分段
+  // ===== 第一步：智能教学环节识别 =====
+  // 结合时间、关键词、上下文进行更准确的环节划分
   const segments=[];
-  let currentSeg={title:'课程导入',time:'',sentences:[],type:'intro'};
+  let currentSeg=null;
   
-  function detectSegment(text,time){
+  // 环节定义：包含触发关键词、最小持续时间、子环节模式
+  const segmentDefs=[
+    {title:'课程导入',type:'intro',icon:'🎯',color:'#2E7D32',bg:'#E8F5E9',
+     triggers:['同学们好','今天我们来讲','今天我们学习','哈喽','大家好','我们今天','上节课','复习一下'],
+     minDuration:60},
+    {title:'新知讲解',type:'lecture',icon:'📖',color:'#1565C0',bg:'#E3F2FD',
+     triggers:['我们来看','首先','第一个','第二个','第三个','接下来','那么','原理','概念','定义','结构','功能','机制','过程','调节'],
+     subSegments:['知识点一','知识点二','知识点三','知识点四'],
+     minDuration:180},
+    {title:'例题精讲',type:'example',icon:'✏️',color:'#E65100',bg:'#FFF3E0',
+     triggers:['第一题','第二题','第三题','第四题','第五题','第六题','第七题','如图','下图','图甲','图乙','这道题','题目'],
+     minDuration:120},
+    {title:'实验探究',type:'experiment',icon:'🔬',color:'#6A1B9A',bg:'#F3E5F5',
+     triggers:['实验','验证','设计','探究','脊蛙','反射弧','操作','步骤','观察'],
+     minDuration:120},
+    {title:'课堂练习',type:'practice',icon:'📝',color:'#F57F17',bg:'#FFFDE7',
+     triggers:['我们来做','做一下题','练习','随堂','检测','大家做','思考一下'],
+     minDuration:90},
+    {title:'课堂总结',type:'summary',icon:'💡',color:'#C62828',bg:'#FFEBEE',
+     triggers:['总结','今天我们学习了','归纳','梳理','讲到这里','本节课','最后','总之','综上所述'],
+     minDuration:60}
+  ];
+  
+  function detectSegment(text,time,index,total){
     const min=parseInt((time||'00:00').split(':')[0])||0;
-    if(/同学们好|今天我们来讲|今天我们学习|哈喽|大家好/.test(text))return {title:'课程导入',type:'intro'};
-    if(/第一题|第二题|第三题|第四题|第五题|第六题|第七题|如图|下图|图甲|图乙/.test(text))return {title:'例题精讲',type:'example'};
-    if(/我们来做|做一下题|练习|随堂|检测/.test(text))return {title:'课堂练习',type:'practice'};
-    if(/总结|今天我们学习了|归纳|梳理|讲到这里/.test(text))return {title:'课堂总结',type:'summary'};
-    if(/实验|验证|设计|探究|脊蛙|反射弧/.test(text)&&min>8)return {title:'实验探究',type:'experiment'};
-    if(/原理|核心|关键|重点|方法|分析/.test(text)&&min<15)return {title:'新知讲解',type:'lecture'};
+    const progress=index/total;
+    
+    // 按时间和进度的基础判断
+    for(const def of segmentDefs){
+      for(const trigger of def.triggers){
+        if(text.includes(trigger)){
+          // 导入只在开头20%出现
+          if(def.type==='intro'&&progress>0.2)continue;
+          // 总结只在结尾20%出现
+          if(def.type==='summary'&&progress<0.75)continue;
+          return def;
+        }
+      }
+    }
     return null;
   }
   
-  optimized.forEach((l,i)=>{
-    const seg=detectSegment(l.text,l.time);
-    if(seg&&currentSeg.title!==seg.title&&currentSeg.sentences.length>0){
-      segments.push(currentSeg);
-      currentSeg={title:seg.title,time:l.time,sentences:[],type:seg.type};
+  // 识别环节
+  lines.forEach((l,i)=>{
+    const def=detectSegment(l.text,l.time,i,lines.length);
+    if(def&&(!currentSeg||currentSeg.def.title!==def.title)){
+      // 新环节开始
+      if(currentSeg&&currentSeg.sentences.length>0){
+        segments.push(currentSeg);
+      }
+      currentSeg={def,startTime:l.time,sentences:[],subSegments:[]};
     }
-    if(!currentSeg.time)currentSeg.time=l.time;
+    if(!currentSeg){
+      currentSeg={def:segmentDefs[1],startTime:l.time,sentences:[],subSegments:[]};
+    }
     currentSeg.sentences.push(l);
   });
-  if(currentSeg.sentences.length>0)segments.push(currentSeg);
+  if(currentSeg&&currentSeg.sentences.length>0)segments.push(currentSeg);
   
-  // 环节颜色映射
-  const segColors={
-    intro:{bg:'#E8F5E9',color:'#2E7D32',icon:'🎯'},
-    lecture:{bg:'#E3F2FD',color:'#1565C0',icon:'📖'},
-    example:{bg:'#FFF3E0',color:'#E65100',icon:'✏️'},
-    experiment:{bg:'#F3E5F5',color:'#6A1B9A',icon:'🔬'},
-    practice:{bg:'#FFFDE7',color:'#F57F17',icon:'📝'},
-    summary:{bg:'#FFEBEE',color:'#C62828',icon:'💡'}
-  };
+  // 合并过短的相邻环节
+  const mergedSegments=[];
+  segments.forEach(seg=>{
+    if(mergedSegments.length>0){
+      const last=mergedSegments[mergedSegments.length-1];
+      if(seg.sentences.length<8&&last.def.type===seg.def.type){
+        last.sentences=last.sentences.concat(seg.sentences);
+        return;
+      }
+    }
+    mergedSegments.push(seg);
+  });
   
-  // 将环节内的句子按语义合并成段落（每6-8句一段，提问句可作为段落开始）
+  // ===== 第二步：环节内子环节识别 =====
+  function detectSubSegments(sentences,def){
+    if(!def.subSegments||sentences.length<15)return [{title:'',sentences}];
+    
+    const subs=[];
+    let currentSub={title:'',sentences:[]};
+    let subIndex=0;
+    
+    const subTriggers=['首先','第一','其次','第二','然后','第三','接下来','另外','最后','那么','所以','因此'];
+    
+    sentences.forEach((s,i)=>{
+      const trigger=subTriggers.find(t=>s.text.startsWith(t)||s.text.includes(t));
+      if(trigger&&currentSub.sentences.length>=8&&subIndex<def.subSegments.length){
+        if(currentSub.sentences.length>0)subs.push(currentSub);
+        currentSub={title:def.subSegments[subIndex],sentences:[s]};
+        subIndex++;
+      }else{
+        currentSub.sentences.push(s);
+      }
+    });
+    if(currentSub.sentences.length>0)subs.push(currentSub);
+    return subs;
+  }
+  
+  // ===== 第三步：语义段落合并 =====
   function mergeToParagraphs(sentences){
     const paragraphs=[];
     let currentPara=[];
+    
     sentences.forEach((s,i)=>{
-      const isQuestion=/吗|呢|吧|？|\?|怎么|什么|为什么|如何|是不是|对不对|有没有/.test(s.text);
-      // 提问句作为新段落开始（如果当前段落已有内容）
-      if(isQuestion&&currentPara.length>=3){
+      const isQuestion=/吗|呢|吧|？|\?|怎么|什么|为什么|如何|是不是|对不对|有没有|对吧/.test(s.text);
+      const isTransition=/所以|因此|那么|接下来|然后|首先|其次|最后|总之/.test(s.text);
+      const isKey=/重点|核心|关键|记住|注意|必须|一定|总结|规律|方法|本质|原理/.test(s.text);
+      
+      // 新段落开始的条件：
+      // 1. 当前段落已有4-6句，且遇到提问句或过渡句
+      // 2. 当前段落已有8句以上
+      // 3. 遇到重点句且当前段落已有内容
+      if(currentPara.length>=4&&(isQuestion||isTransition)){
         paragraphs.push(currentPara);
         currentPara=[s];
-      }else if(currentPara.length>=7){
-        // 每7句左右分段
+      }else if(currentPara.length>=8){
         paragraphs.push(currentPara);
         currentPara=[s];
       }else{
@@ -2606,36 +2675,84 @@ function renderTranscriptReadMode(lines){
     return paragraphs;
   }
   
+  // ===== 第四步：渲染 =====
+  const totalQuestions=lines.filter(l=>/吗|呢|吧|？|\?|怎么|什么|为什么|如何|是不是|对不对|有没有/.test(l.text)).length;
+  const totalKeys=lines.filter(l=>/重点|核心|关键|记住|注意|必须|一定|总结|规律|方法/.test(l.text)).length;
+  
   return `
     <div style="padding:8px 4px">
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:12px;color:var(--ink3)">共 ${lines.length} 句 · ${segments.length} 个教学环节</span>
-        <span style="font-size:12px;color:var(--ink3)">|</span>
-        <span style="font-size:12px;color:var(--primary)">✅ 全部简体 · 术语已修正 · 提问/重点已标注</span>
+      <!-- 统计信息 -->
+      <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center;padding:12px;background:var(--bg);border-radius:10px">
+        <span style="font-size:13px;font-weight:600;color:var(--ink)">📊 逐字稿概览</span>
+        <span style="font-size:12px;color:var(--ink2)">共 ${lines.length} 句</span>
+        <span style="font-size:12px;color:var(--ink2)">|</span>
+        <span style="font-size:12px;color:var(--primary)">${mergedSegments.length} 个教学环节</span>
+        <span style="font-size:12px;color:var(--ink2)">|</span>
+        <span style="font-size:12px;color:#1565C0">❓ ${totalQuestions} 处提问</span>
+        <span style="font-size:12px;color:var(--ink2)">|</span>
+        <span style="font-size:12px;color:#E65100">🔥 ${totalKeys} 处重点</span>
+        <span style="font-size:12px;color:var(--ink2)">|</span>
+        <span style="font-size:12px;color:var(--success)">✅ AI术语修正 · 简体中文</span>
       </div>
-      ${segments.map((seg,si)=>{
-        const color=segColors[seg.type]||segColors.lecture;
-        const paragraphs=mergeToParagraphs(seg.sentences);
+      
+      <!-- 图例 -->
+      <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;font-size:12px;color:var(--ink3)">
+        <span><span style="color:#1565C0;font-weight:600">蓝色文字</span> = 提问互动</span>
+        <span><span style="background:linear-gradient(transparent 60%, #FFE082 60%);font-weight:600">黄色高亮</span> = 重点强调</span>
+        <span>❓ = 提问语气</span>
+        <span>🔥 = 强调语气</span>
+        <span>👍 = 鼓励语气</span>
+      </div>
+      
+      ${mergedSegments.map((seg,si)=>{
+        const color=seg.def.color;
+        const bg=seg.def.bg;
+        const subSegs=detectSubSegments(seg.sentences,seg.def);
+        const endTime=seg.sentences[seg.sentences.length-1]?.time||'';
+        
         return `
-          <div style="margin-bottom:28px;border-left:3px solid ${color.color};padding-left:16px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-              <span style="background:${color.bg};color:${color.color};padding:4px 12px;border-radius:6px;font-size:13px;font-weight:700">${color.icon} ${seg.title}</span>
-              <span style="font-size:11px;color:var(--ink3);font-family:monospace">${seg.time} · ${seg.sentences.length}句 · ${paragraphs.length}段</span>
+          <div style="margin-bottom:32px">
+            <!-- 环节标题 -->
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid ${bg}">
+              <span style="background:${bg};color:${color};padding:6px 14px;border-radius:8px;font-size:14px;font-weight:700">${seg.def.icon} ${seg.def.title}</span>
+              <span style="font-size:12px;color:var(--ink3);font-family:monospace">${seg.startTime} - ${endTime}</span>
+              <span style="font-size:11px;color:var(--ink3)">${seg.sentences.length}句</span>
             </div>
-            <div style="line-height:2;font-size:15px;color:var(--ink)">
-              ${paragraphs.map((para,pi)=>{
-                // 合并段落文本，保留提问和重点标注
-                let paraHtml='';
-                para.forEach((s,si2)=>{
-                  const isQuestion=/吗|呢|吧|？|\?|怎么|什么|为什么|如何|是不是|对不对|有没有/.test(s.text);
-                  const isKey=/重点|核心|关键|记住|注意|必须|一定|总结|规律|方法/.test(s.text);
-                  const toneLabel={calm:'',question:'❓',passion:'🔥',encourage:'👍'}[s.tone]||'';
-                  let textStyle='';
-                  if(isQuestion)textStyle='color:#1565C0;font-weight:500';
-                  if(isKey)textStyle='background:linear-gradient(transparent 60%, #FFE082 60%);font-weight:600';
-                  paraHtml+=`<span style="${textStyle}">${escapeHtml(s.text)}</span>${toneLabel?`<span style="font-size:10px;color:var(--ink3);margin:0 2px">${toneLabel}</span>`:''} `;
-                });
-                return `<p style="margin:0 0 14px 0;text-indent:2em">${paraHtml}</p>`;
+            
+            <!-- 子环节内容 -->
+            <div style="padding-left:8px">
+              ${subSegs.map((sub,subi)=>{
+                const paragraphs=mergeToParagraphs(sub.sentences);
+                return `
+                  ${sub.title?`<div style="font-size:13px;font-weight:600;color:${color};margin:12px 0 8px 0;padding-left:8px;border-left:3px solid ${bg}">${sub.title}</div>`:''}
+                  <div style="line-height:2.2;font-size:15px;color:var(--ink);padding-left:8px">
+                    ${paragraphs.map((para,pi)=>{
+                      // 真正合并成段落，在段落内标注重点和提问
+                      let paraText='';
+                      para.forEach((s,si2)=>{
+                        const isQuestion=/吗|呢|吧|？|\?|怎么|什么|为什么|如何|是不是|对不对|有没有|对吧/.test(s.text);
+                        const isKey=/重点|核心|关键|记住|注意|必须|一定|总结|规律|方法|本质|原理/.test(s.text);
+                        const toneLabel={calm:'',question:'❓',passion:'🔥',encourage:'👍'}[s.tone]||'';
+                        
+                        let text=s.text;
+                        // 标点后加空格
+                        if(!/[。！？!?，,；;]$/.test(text))text+=' ';
+                        
+                        if(isQuestion&&isKey){
+                          paraText+=`<span style="color:#1565C0;background:linear-gradient(transparent 60%, #FFE082 60%);font-weight:600">${escapeHtml(text)}</span>`;
+                        }else if(isQuestion){
+                          paraText+=`<span style="color:#1565C0;font-weight:500">${escapeHtml(text)}</span>`;
+                        }else if(isKey){
+                          paraText+=`<span style="background:linear-gradient(transparent 60%, #FFE082 60%);font-weight:600">${escapeHtml(text)}</span>`;
+                        }else{
+                          paraText+=escapeHtml(text);
+                        }
+                        if(toneLabel)paraText+=`<span style="font-size:11px;color:var(--ink3);margin:0 1px">${toneLabel}</span>`;
+                      });
+                      return `<p style="margin:0 0 16px 0;text-indent:2em;text-align:justify">${paraText}</p>`;
+                    }).join('')}
+                  </div>
+                `;
               }).join('')}
             </div>
           </div>
