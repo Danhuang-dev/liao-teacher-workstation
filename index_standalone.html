@@ -2106,12 +2106,15 @@ async function renderAnalysisTab(){
       </div>
       <div class="card" style="background:var(--info-bg);border:1px solid var(--info)">
         <div style="font-size:13px;color:var(--ink2);line-height:1.8">
-          <strong style="color:var(--info)">💡 使用说明：</strong><br>
-          1. 确保AI分析服务已启动：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
-          2. 粘贴B站名师教学视频链接，点击"智能解析"<br>
-          3. 系统自动：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析<br>
-          4. 生成完整逐字稿（带语气标记）、教学环节拆解、知识点、思维导图、教学技巧<br>
-          5. 在"转化教案"中一键生成您的专属教案
+          <strong style="color:var(--info)">💡 使用说明（重要）：</strong><br>
+          <strong>第一步：启动AI分析服务</strong><br>
+          <button class="btn btn-sm btn-primary" style="margin:6px 0" onclick="downloadAIService()">📥 下载 ai_analysis_server.py</button><br>
+          在下载目录打开终端，运行：<code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">python3 ai_analysis_server.py</code><br>
+          <strong>第二步：用本地地址打开工作台</strong><br>
+          服务启动后，用 <code style="background:rgba(0,0,0,0.05);padding:2px 6px;border-radius:4px">http://localhost:8890</code> 或本地文件打开本工作台<br>
+          <strong>第三步：粘贴B站链接分析</strong><br>
+          在上方输入框粘贴B站视频链接，点击"智能解析"<br>
+          系统自动：下载音频 → Whisper语音识别 → OpenCC简体转换 → 深度教学分析
         </div>
       </div>
     `;
@@ -2319,26 +2322,36 @@ async function analyzeVideo(){
   const url=$('#an_videoUrl')?.value||currentAnalysis.videoUrl;
   if(!url){toast('请先粘贴B站视频链接');return}
 
-  // 创建任务进度
+  // 创建任务进度（立即创建，确保用户能看到）
   const taskId=createTask('transcript','AI课堂分析：'+(currentAnalysis.title||'课堂视频'),300);
-  updateTaskProgress(taskId,5,'processing');
+  updateTaskProgress(taskId,3,'processing');
 
   // 显示分析状态
   const statusEl=document.getElementById('analysisStatus');
   if(statusEl){
     statusEl.style.display='block';
-    statusEl.innerHTML='<div style="text-align:center;padding:20px"><div style="font-size:14px;margin-bottom:10px">🔍 正在连接AI分析服务...</div><div class="task-progress-bar" style="max-width:300px;margin:0 auto"><div class="task-progress-fill" style="width:5%;background:var(--primary)"></div></div></div>';
+    statusEl.innerHTML='<div style="text-align:center;padding:20px"><div style="font-size:14px;margin-bottom:10px">🔍 正在连接AI分析服务...</div><div class="task-progress-bar" style="max-width:300px;margin:0 auto"><div class="task-progress-fill" style="width:3%;background:var(--primary)"></div></div></div>';
   }
 
   try{
+    // 0. 先测试连接
+    updateTaskProgress(taskId,5,'processing');
+    try{
+      const healthResp=await fetch(AI_API_BASE+'/api/health',{signal:AbortSignal.timeout(5000)});
+      if(!healthResp.ok)throw new Error('服务异常');
+    }catch(connectErr){
+      throw new Error('无法连接AI分析服务');
+    }
+
     // 1. 提交分析任务
     updateTaskProgress(taskId,10,'processing');
     const resp=await fetch(AI_API_BASE+'/api/analyze',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({url})
+      body:JSON.stringify({url}),
+      signal:AbortSignal.timeout(15000)
     });
-    if(!resp.ok)throw new Error('AI服务连接失败，请检查服务是否启动');
+    if(!resp.ok)throw new Error('AI服务响应异常');
     const data=await resp.json();
     const aiTaskId=data.task_id;
 
@@ -2397,10 +2410,19 @@ async function analyzeVideo(){
     failTask(taskId,e.message);
     toast('❌ '+e.message);
     if(statusEl){
-      statusEl.innerHTML=`<div style="text-align:center;padding:20px;color:var(--danger)">
-        <div style="font-size:14px;margin-bottom:10px">❌ 分析失败</div>
-        <div style="font-size:12px">${e.message}</div>
-        <div style="font-size:11px;color:var(--ink3);margin-top:10px">请确保AI分析服务已启动：python3 ai_analysis_server.py</div>
+      statusEl.innerHTML=`<div style="text-align:center;padding:20px">
+        <div style="font-size:16px;margin-bottom:12px;color:var(--danger)">❌ AI分析服务连接失败</div>
+        <div style="font-size:13px;color:var(--ink2);line-height:1.8;text-align:left;max-width:400px;margin:0 auto">
+          <strong>可能原因：</strong><br>
+          1. AI分析服务未启动<br>
+          2. 您通过公网链接访问，但服务运行在本地<br><br>
+          <strong>解决方案：</strong><br>
+          方案一（推荐）：在云电脑/本地电脑终端运行：<br>
+          <code style="background:var(--bg);padding:4px 8px;border-radius:4px;display:block;margin:6px 0">python3 ai_analysis_server.py</code>
+          然后用 <code style="background:var(--bg);padding:2px 6px;border-radius:4px">http://localhost:8890</code> 访问工作台<br><br>
+          方案二：在「设置」页面修改分析服务地址为您的服务器地址
+        </div>
+        <button class="btn btn-primary" style="margin-top:16px" onclick="testAnalysisService()">🔌 测试服务连接</button>
       </div>`;
     }
   }
@@ -4657,6 +4679,163 @@ function saveAnalysisService(){
   window.AI_API_BASE=base;
   toast('分析服务地址已保存');
   testAnalysisService();
+}
+
+function downloadAIService(){
+  // 内嵌ai_analysis_server.py的核心内容，供用户下载
+  const scriptContent = `#!/usr/bin/env python3
+"""
+AI名师课堂分析服务
+流程：B站链接解析 → 音频下载 → Whisper识别 → OpenCC简体转换 → 深度教学分析
+启动：python3 ai_analysis_server.py
+依赖：pip install fastapi uvicorn whisper opencc-python-reimplemented requests ffmpeg-python
+"""
+import os, re, json, time, uuid, asyncio, subprocess
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import requests, whisper
+from opencc import OpenCC
+
+app = FastAPI(title="AI名师课堂分析服务")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+tasks = {}
+cc = OpenCC('t2s')
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        print("加载Whisper模型...")
+        model = whisper.load_model("tiny")
+    return model
+
+class AnalyzeRequest(BaseModel):
+    url: str
+    language: str = "zh"
+
+def extract_bvid(url):
+    m = re.search(r'BV[a-zA-Z0-9]+', url)
+    return m.group(0) if m else None
+
+def get_video_info(bvid):
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.bilibili.com'}
+    resp = requests.get(f'https://api.bilibili.com/x/web-interface/view?bvid={bvid}', headers=headers, timeout=10)
+    data = resp.json()
+    if data.get('code') != 0: raise Exception(data.get('message'))
+    info = data['data']
+    return {'bvid': bvid, 'cid': info['cid'], 'title': info['title'], 'owner': info['owner']['name'], 'duration': info['duration']}
+
+def get_audio_url(bvid, cid):
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': f'https://www.bilibili.com/video/{bvid}'}
+    resp = requests.get(f'https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=64&fnval=16', headers=headers, timeout=10)
+    data = resp.json()
+    if data.get('code') != 0: raise Exception(data.get('message'))
+    return data['data']['dash']['audio'][0]['baseUrl']
+
+def download_audio(audio_url, output_path, bvid):
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': f'https://www.bilibili.com/video/{bvid}'}
+    resp = requests.get(audio_url, headers=headers, stream=True, timeout=60)
+    with open(output_path, 'wb') as f:
+        for chunk in resp.iter_content(chunk_size=8192): f.write(chunk)
+    mp3_path = output_path.replace('.m4s', '.mp3')
+    subprocess.run(['ffmpeg', '-y', '-i', output_path, '-acodec', 'libmp3lame', '-q:a', '4', mp3_path], capture_output=True, timeout=120)
+    return mp3_path
+
+def transcribe_audio(audio_path, task_id):
+    model = get_model()
+    result = model.transcribe(audio_path, language='zh', fp16=False, verbose=False)
+    segments = []
+    for seg in result['segments']:
+        text = cc.convert(seg['text'].strip())
+        if text:
+            tone = 'calm'
+            if any(q in text for q in ['吗','呢','吧','？','?','怎么','什么','为什么']): tone = 'question'
+            elif any(k in text for k in ['重点','关键','记住','注意','必须']): tone = 'passion'
+            time_str = f"{int(seg['start']//60):02d}:{int(seg['start']%60):02d}"
+            segments.append({'time': time_str, 'text': text, 'tone': tone})
+            if task_id in tasks: tasks[task_id]['progress'] = min(90, int(seg['start']/result['segments'][-1]['end']*70)+20)
+    return segments
+
+def deep_analysis(segments, video_info):
+    full_text = ' '.join([s['text'] for s in segments])
+    teaching_segments = []
+    current_seg = {'title': '课程导入', 'start_time': '', 'sentences': [], 'type': 'intro'}
+    for s in segments:
+        min_val = int((s['time'] or '00:00').split(':')[0])
+        if any(k in s['text'] for k in ['同学们好','今天我们来讲','哈喽','大家好']) and current_seg['sentences']:
+            teaching_segments.append(current_seg); current_seg = {'title':'课程导入','start_time':s['time'],'sentences':[],'type':'intro'}
+        elif any(k in s['text'] for k in ['第一题','第二题','如图','例题']) and current_seg['title']!='例题精讲' and current_seg['sentences']:
+            teaching_segments.append(current_seg); current_seg = {'title':'例题精讲','start_time':s['time'],'sentences':[],'type':'example'}
+        elif any(k in s['text'] for k in ['总结','归纳','梳理']) and current_seg['title']!='课堂总结' and current_seg['sentences']:
+            teaching_segments.append(current_seg); current_seg = {'title':'课堂总结','start_time':s['time'],'sentences':[],'type':'summary'}
+        if not current_seg['start_time']: current_seg['start_time'] = s['time']
+        current_seg['sentences'].append(s)
+    if current_seg['sentences']: teaching_segments.append(current_seg)
+    knowledge_points = [kw for kw in ['细胞','神经','激素','调节','反射','突触','电位','基因','遗传','生态','进化','代谢','光合','免疫','稳态'] if kw in full_text][:10]
+    return {'teaching_segments': teaching_segments, 'knowledge_points': knowledge_points, 'word_count': len(full_text)}
+
+async def process_task(task_id, url):
+    try:
+        tasks[task_id] = {'id': task_id, 'status': 'processing', 'progress': 5, 'message': '解析视频链接...'}
+        bvid = extract_bvid(url)
+        if not bvid: raise Exception('无法识别B站视频链接')
+        tasks[task_id]['progress'] = 10; tasks[task_id]['message'] = '获取视频信息...'
+        video_info = get_video_info(bvid)
+        tasks[task_id]['video_info'] = video_info
+        tasks[task_id]['progress'] = 15; tasks[task_id]['message'] = '获取音频流地址...'
+        audio_url = get_audio_url(bvid, video_info['cid'])
+        tasks[task_id]['progress'] = 20; tasks[task_id]['message'] = '下载音频中...'
+        audio_dir = os.path.join(os.path.dirname(__file__), 'audio')
+        os.makedirs(audio_dir, exist_ok=True)
+        raw_path = os.path.join(audio_dir, f'{task_id}.m4s')
+        mp3_path = download_audio(audio_url, raw_path, bvid)
+        tasks[task_id]['progress'] = 25; tasks[task_id]['message'] = '音频下载完成，开始识别...'
+        segments = transcribe_audio(mp3_path, task_id)
+        tasks[task_id]['progress'] = 90; tasks[task_id]['message'] = f'识别完成，共{len(segments)}段，深度分析中...'
+        analysis = deep_analysis(segments, video_info)
+        result = {'id': task_id, 'video_info': video_info, 'transcript': segments, 'analysis': analysis}
+        tasks[task_id]['result'] = result
+        tasks[task_id]['progress'] = 100; tasks[task_id]['status'] = 'completed'; tasks[task_id]['message'] = '分析完成！'
+        try: os.remove(raw_path); os.remove(mp3_path)
+        except: pass
+    except Exception as e:
+        tasks[task_id]['status'] = 'failed'; tasks[task_id]['message'] = f'分析失败：{str(e)}'
+
+@app.post("/api/analyze")
+async def analyze_video(req: AnalyzeRequest):
+    task_id = str(uuid.uuid4())[:8]
+    tasks[task_id] = {'id': task_id, 'status': 'pending', 'progress': 0, 'message': '等待处理...'}
+    asyncio.create_task(process_task(task_id, req.url))
+    return {'task_id': task_id, 'status': 'pending'}
+
+@app.get("/api/status/{task_id}")
+async def get_status(task_id: str):
+    if task_id not in tasks: raise HTTPException(status_code=404, detail="任务不存在")
+    t = tasks[task_id]
+    return {'task_id': task_id, 'status': t['status'], 'progress': t['progress'], 'message': t.get('message',''), 'video_info': t.get('video_info')}
+
+@app.get("/api/result/{task_id}")
+async def get_result(task_id: str):
+    if task_id not in tasks: raise HTTPException(status_code=404, detail="任务不存在")
+    if tasks[task_id]['status'] != 'completed': raise HTTPException(status_code=400, detail="任务尚未完成")
+    return tasks[task_id]['result']
+
+@app.get("/api/health")
+async def health():
+    return {'status': 'ok', 'model_loaded': model is not None}
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8890)
+`;
+  const blob=new Blob([scriptContent],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='ai_analysis_server.py';
+  a.click();
+  toast('服务文件已下载，请在终端运行：python3 ai_analysis_server.py');
 }
 
 async function testAnalysisService(){
