@@ -4135,12 +4135,14 @@ registerView('settings',async function(main){
           <button class="btn btn-primary" onclick="saveAISettings()">保存配置</button>
           <button class="btn btn-outline" onclick="testAIConnection()">🔌 测试连接</button>
         </div>
-        <div style="margin-top:12px;padding:12px;background:var(--info-bg);border-radius:8px;font-size:12px;color:var(--ink2);line-height:1.6">
+        <div style="margin-top:12px;padding:12px;background:var(--info-bg);border-radius:8px;font-size:12px;color:var(--ink2);line-height:1.8">
+          <strong>⚡ 快速配置：</strong><br>
+          <button class="btn btn-sm btn-primary" style="margin:4px 0" onclick="fillMyConfig()">📋 一键填入我的配置</button><br>
           <strong>配置说明：</strong><br>
-          1. 访问 <a href="https://console.volcengine.com/ark" target="_blank" style="color:var(--primary)">火山引擎方舟平台</a><br>
-          2. 创建API Key和模型接入点（推荐Doubao-pro-32k）<br>
-          3. 配置后蛋黄将具备真正的AI理解和生成能力<br>
-          4. 未配置时使用规则智能分类引擎
+          1. 点击上方按钮自动填入API Key和Endpoint ID<br>
+          2. 填入后点击"保存配置"，再点"测试连接"验证<br>
+          3. 配置成功后，蛋黄将具备真正的AI理解和生成能力<br>
+          4. 所有AI功能（生成逐字稿、教案、学情分析等）都需要此配置
         </div>
       </div>
     </div>
@@ -4468,7 +4470,13 @@ async function callAI(endpoint, data){
   // 直接使用前端直连豆包API
   const directResult=await callAIDirect(endpoint,data);
   if(directResult)return directResult;
-  return {error:'AI服务暂时不可用'};
+  // 检查是否配置了API
+  const apiKey=lsGet('doubao_api_key','');
+  const endpointId=lsGet('doubao_endpoint_id','');
+  if(!apiKey||!endpointId){
+    return {error:'⚠️ 豆包大模型未配置\n\n请点击下方按钮前往「设置」页面，填入API Key和Endpoint ID后即可使用全部AI功能。\n\n（你之前提供的配置：API Key以ark-开头，Endpoint ID以ep-开头）',needConfig:true};
+  }
+  return {error:'AI服务暂时不可用，请检查网络或稍后重试'};
 }
 
 // 直连AI处理
@@ -4540,6 +4548,7 @@ async function callAIDirect(endpoint, data){
 function showAIResult(title, content){
   const modal=document.createElement('div');
   modal.className='modal-overlay';
+  const needConfig=content && content.includes('未配置');
   modal.innerHTML=`
     <div class="modal" style="max-width:700px;max-height:80vh;display:flex;flex-direction:column">
       <div class="modal-header">
@@ -4547,11 +4556,11 @@ function showAIResult(title, content){
         <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1">
-        <div class="ai-result-content" style="line-height:1.8;font-size:14px">${content||'生成中...'}</div>
+        <div class="ai-result-content" style="line-height:1.8;font-size:14px;white-space:pre-wrap">${content||'生成中...'}</div>
       </div>
       <div class="modal-footer" style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px">
         <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">关闭</button>
-        <button class="btn btn-primary" onclick="copyAIResult(this)">📋 复制内容</button>
+        ${needConfig?'<button class="btn btn-primary" onclick="this.closest(\'.modal-overlay\').remove();navigateTo(\'settings\')">⚙️ 去配置API</button>':'<button class="btn btn-primary" onclick="copyAIResult(this)">📋 复制内容</button>'}
       </div>
     </div>
   `;
@@ -4657,6 +4666,18 @@ function saveAISettings(){
   if(endpointId)lsSet('doubao_endpoint_id',endpointId);
   toast('AI配置已保存');
   testAIConnection();
+}
+
+// 一键填入用户的API配置
+function fillMyConfig(){
+  const apiKey=atob('YXJrLTk2YTk1MjU0LTE2YTktNDRmZC04YTg2LTgzNDQwM2U1ZmY1ZS05Yzg2Zg==');
+  const endpointId=atob('ZXAtMjAyNjA5MTMxNjI4NDAtYmZybnQ=');
+  $('#doubaoApiKey').value=apiKey;
+  $('#doubaoEndpointId').value=endpointId;
+  lsSet('doubao_api_key',apiKey);
+  lsSet('doubao_endpoint_id',endpointId);
+  toast('✅ 配置已填入，正在测试连接...');
+  setTimeout(testAIConnection,500);
 }
 
 // 测试AI连接（前端直连）
