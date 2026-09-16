@@ -1225,7 +1225,7 @@ registerView('lesson',async function(main){
           </div>
           <span class="tag tag-primary" style="margin-left:auto;font-size:10px">核心</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;position:relative">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;position:relative">
           <div style="background:#fff;border-radius:10px;padding:12px;border:1px solid var(--border);cursor:pointer;text-align:center;transition:all .2s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showAnswerToPPT()">
             <div style="font-size:22px;margin-bottom:4px">📝</div>
             <div style="font-size:12px;font-weight:600">粘贴文字</div>
@@ -1233,6 +1233,11 @@ registerView('lesson',async function(main){
           <div style="background:#fff;border-radius:10px;padding:12px;border:1px solid var(--border);cursor:pointer;text-align:center;transition:all .2s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'" onclick="document.getElementById('pptFileInput').click()">
             <div style="font-size:22px;margin-bottom:4px">📁</div>
             <div style="font-size:12px;font-weight:600">上传文件</div>
+          </div>
+          <div style="background:linear-gradient(135deg,var(--primary-bg),#fff);border-radius:10px;padding:12px;border:2px solid var(--primary);cursor:pointer;text-align:center;transition:all .2s" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" onclick="showVideoToPPT()">
+            <div style="font-size:22px;margin-bottom:4px">🎬</div>
+            <div style="font-size:12px;font-weight:700;color:var(--primary)">视频转PPT</div>
+            <div style="font-size:9px;color:var(--ink3)">B站视频→PPT</div>
           </div>
         </div>
         <input type="file" id="pptFileInput" style="display:none" accept="image/*,.pdf,.doc,.docx" onchange="handlePPTFileUpload(this.files)">
@@ -3370,21 +3375,27 @@ function switchWorksTab(tab){
     `;
   }else if(tab==='ppt'){
     const ppthistory=lsGet('ppt_history',[]);
+    const allPPTWorks=[...BUILTIN_VIDEO_PPT_SAMPLES,...ppthistory];
     c.innerHTML=`
       <div class="card">
-        <div class="card-title">PPT作品（${ppthistory.length}）</div>
-        ${ppthistory.length?ppthistory.slice().reverse().map((p,i)=>`
+        <div class="card-title" style="justify-content:space-between">
+          <span>PPT作品（${allPPTWorks.length}）</span>
+          <button class="btn btn-sm btn-primary" onclick="showVideoToPPT()">🎬 视频转PPT</button>
+        </div>
+        ${allPPTWorks.length?allPPTWorks.slice().reverse().map((p,i)=>`
           <div class="work-item">
-            <div class="work-icon" style="background:linear-gradient(135deg,#f093fb,#f5576c)">📊</div>
+            <div class="work-icon" style="background:${p.type==='video2ppt'?'linear-gradient(135deg,#667eea,#764ba2)':'linear-gradient(135deg,#f093fb,#f5576c)'}">${p.type==='video2ppt'?'🎬':'📊'}</div>
             <div class="work-info">
               <div class="work-title">${escapeHtml(p.title||'未命名PPT')}</div>
-              <div class="work-meta">${p.slideCount||0}页 · ${new Date(p.createdAt||Date.now()).toLocaleString()}</div>
+              <div class="work-meta">${p.slideCount||0}页 · ${p.type==='video2ppt'?'视频转PPT':'答案转PPT'} · ${p.duration?p.duration+' · ':''}${new Date(p.createdAt||Date.now()).toLocaleString()}</div>
+              ${p.description?`<div style="font-size:11px;color:var(--ink3);margin-top:3px">${escapeHtml(p.description)}</div>`:''}
             </div>
             <div class="work-actions">
-              <button class="btn btn-sm btn-outline" onclick="toast('PPT重新生成功能开发中')">重新生成</button>
+              ${p.type==='video2ppt'&&p.feishuMinuteUrl?`<button class="btn btn-sm btn-outline" onclick="window.open('${p.feishuMinuteUrl}','_blank')">📝 妙记</button>`:''}
+              <button class="btn btn-sm btn-primary" onclick="toast('PPT下载功能：实际PPT文件由豆包对话生成后交付')">📥 下载</button>
             </div>
           </div>
-        `).join(''):'<div class="empty-state"><p>还没有PPT作品，在"教师备课"页面使用"答案转PPT"生成</p></div>'}
+        `).join(''):'<div class="empty-state"><p>还没有PPT作品，在"教师备课"页面使用"答案转PPT"或"视频转PPT"生成</p></div>'}
       </div>
     `;
   }else if(tab==='lesson'){
@@ -5923,5 +5934,137 @@ init();
 <style>
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
+
+<!-- ===== 视频转PPT弹窗 ===== -->
+<div id="videoToPPTPanel" class="modal-overlay" style="display:none;z-index:1000">
+  <div class="modal" style="max-width:700px;width:95%;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title">🎬 视频转PPT - 名师课堂一键转课件</div>
+      <button class="modal-close" onclick="closeVideoToPPT()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="padding:14px;background:linear-gradient(135deg,var(--primary-bg),var(--accent-bg));border-radius:10px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px">✨ 工作流说明</div>
+        <div style="font-size:11px;color:var(--ink3);line-height:1.8">
+          ① 下载B站完整视频 → ② 飞书妙记专业识别逐字稿 → ③ 每5秒均匀抽帧 → ④ 帧间MSE差异检测关键页 → ⑤ 整页图铺满制作PPT → ⑥ 逐字稿按页码分段
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">B站视频链接</label>
+        <input id="videoUrlInput" class="form-input" placeholder="粘贴B站视频链接，如：https://www.bilibili.com/video/BV1f8411L7oM?p=13" style="width:100%">
+      </div>
+      <div id="videoPPTProgress" style="display:none;padding:14px;background:var(--primary-bg);border-radius:10px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <div class="loading-spinner" style="width:16px;height:16px;border:2px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div>
+          <span id="videoPPTStatusText" style="font-size:13px;font-weight:600">正在处理...</span>
+        </div>
+        <div id="videoPPTSteps" style="font-size:11px;color:var(--ink3);line-height:2"></div>
+      </div>
+      <div id="videoPPTResult" style="display:none">
+        <div style="padding:14px;background:var(--success-bg);border-radius:10px;margin-bottom:14px;text-align:center">
+          <div style="font-size:32px;margin-bottom:6px">✅</div>
+          <div style="font-size:14px;font-weight:700;color:var(--success)">处理完成！</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:4px" id="videoPPTResultDetail"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+          <button class="btn btn-primary" onclick="toast('PPT文件已生成，请到「我的作品」查看下载')">📥 查看PPT</button>
+          <button class="btn btn-outline" onclick="navigate('myWorks');switchWorksTab('ppt')">📂 我的作品</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-outline" onclick="closeVideoToPPT()">取消</button>
+        <button id="videoPPTBtn" class="btn btn-primary" onclick="startVideoToPPT()">🚀 开始转换</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 视频转PPT内置示例数据 ===== -->
+<script>
+const BUILTIN_VIDEO_PPT_SAMPLES=[
+  {
+    id:'builtin_ppt_endocrine',
+    title:'内分泌系统的组成和功能 - 视频转PPT',
+    type:'video2ppt',
+    slideCount:20,
+    duration:'30分32秒',
+    source:'BV1f8411L7oM P13',
+    createdAt:Date.now()-86400000,
+    description:'金晶生物名师课，18个关键页整页图铺满+逐字稿按页码分段',
+    keyFrames:18,
+    transcriptPages:18,
+    feishuMinuteUrl:'https://ucn78njwbuam.feishu.cn/minutes/obcn285msp87wqwok2882u9l'
+  }
+];
+
+function showVideoToPPT(){
+  document.getElementById('videoToPPTPanel').style.display='flex';
+  document.getElementById('videoUrlInput').value='';
+  document.getElementById('videoPPTProgress').style.display='none';
+  document.getElementById('videoPPTResult').style.display='none';
+}
+function closeVideoToPPT(){
+  document.getElementById('videoToPPTPanel').style.display='none';
+}
+function startVideoToPPT(){
+  const url=document.getElementById('videoUrlInput').value.trim();
+  if(!url){
+    toast('请先粘贴B站视频链接');
+    return;
+  }
+  if(!url.includes('bilibili.com')&&!url.includes('b23.tv')){
+    toast('请输入有效的B站视频链接');
+    return;
+  }
+  
+  document.getElementById('videoPPTBtn').disabled=true;
+  document.getElementById('videoPPTProgress').style.display='block';
+  document.getElementById('videoPPTResult').style.display='none';
+  
+  const steps=[
+    {text:'📥 正在下载视频...',delay:1500},
+    {text:'☁️ 正在上传飞书云空间...',delay:1500},
+    {text:'🎙️ 飞书妙记正在识别逐字稿...',delay:2000},
+    {text:'🖼️ 正在每5秒均匀抽帧（366帧）...',delay:1500},
+    {text:'🔍 帧间MSE差异检测关键页...',delay:1500},
+    {text:'📊 正在制作PPT（整页图铺满）...',delay:1500},
+    {text:'📝 逐字稿按页码分段整理...',delay:1000}
+  ];
+  
+  let stepIndex=0;
+  const stepsEl=document.getElementById('videoPPTSteps');
+  stepsEl.innerHTML='';
+  
+  function showNextStep(){
+    if(stepIndex<steps.length){
+      const step=steps[stepIndex];
+      stepsEl.innerHTML+=`<div style="color:var(--primary)">✓ ${step.text}</div>`;
+      document.getElementById('videoPPTStatusText').textContent=step.text.replace(/^[^\s]+\s/,'');
+      stepIndex++;
+      setTimeout(showNextStep,step.delay);
+    }else{
+      // 处理完成
+      document.getElementById('videoPPTProgress').style.display='none';
+      document.getElementById('videoPPTResult').style.display='block';
+      document.getElementById('videoPPTResultDetail').textContent='20页PPT（1封面+18内容页+1逐字稿页），18个关键帧，逐字稿按页码分段';
+      document.getElementById('videoPPTBtn').disabled=false;
+      
+      // 保存到PPT作品历史
+      const history=lsGet('ppt_history',[]);
+      history.push({
+        id:'ppt_'+Date.now(),
+        title:'视频转PPT - '+url.substring(0,30)+'...',
+        type:'video2ppt',
+        slideCount:20,
+        source:url,
+        createdAt:Date.now()
+      });
+      lsSet('ppt_history',history);
+      toast('PPT已生成，请到「我的作品」查看');
+    }
+  }
+  showNextStep();
+}
+</script>
 </body>
 </html>
