@@ -6067,87 +6067,123 @@ function startVideoToPPT(){
 }
 </script>
 
-<!-- ===== PPT备注查看弹窗（轻量版，无图片） ===== -->
-<div id="pptPreviewPanel" class="modal-overlay" style="display:none;z-index:1100">
-  <div class="modal" style="max-width:800px;width:95%;max-height:85vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--primary);color:#fff;flex-shrink:0">
+<!-- ===== PPT预览弹窗（图片URL+备注+缩略图） ===== -->
+<div id="pptPreviewPanel" class="modal-overlay" style="display:none;z-index:1100;background:rgba(0,0,0,0.85)">
+  <div class="modal" style="max-width:1200px;width:98%;max-height:95vh;height:95vh;display:flex;flex-direction:column;padding:0;overflow:hidden">
+    <!-- 顶部工具栏 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--primary);color:#fff;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:12px">
-        <span style="font-size:16px;font-weight:700">PPT逐字稿备注</span>
-        <span class="tag" style="background:rgba(255,255,255,0.2);color:#fff">共 18 页</span>
+        <span style="font-size:16px;font-weight:700">内分泌系统的组成和功能 - PPT预览</span>
+        <span class="tag" style="background:rgba(255,255,255,0.2);color:#fff" id="pptPreviewPageInfo">第 1 / 18 页</span>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:none" onclick="openFeishuPPT()">📊 飞书在线预览PPT</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:none" onclick="togglePPTNotes()">📝 备注</button>
+        <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:none" onclick="downloadCurrentPPTImage()">💾 保存当前页</button>
         <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:none" onclick="closePPTPreview()">✕ 关闭</button>
       </div>
     </div>
-    <div style="padding:10px 18px;background:var(--primary-bg);display:flex;align-items:center;gap:10px;flex-shrink:0">
-      <button class="btn btn-sm btn-outline" onclick="prevPPTPage()">‹ 上一页</button>
-      <span id="pptCurrentPageLabel" style="font-size:13px;font-weight:600;color:var(--ink);min-width:80px;text-align:center">第 1 页</span>
-      <button class="btn btn-sm btn-outline" onclick="nextPPTPage()">下一页 ›</button>
-      <input type="range" id="pptPageSlider" min="1" max="18" value="1" style="flex:1;accent-color:var(--primary)" oninput="goToPPTPage(this.value-1)">
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:20px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px" id="pptPageNum">1</div>
-        <div>
-          <div style="font-size:14px;font-weight:700;color:var(--ink)" id="pptPageTime">时间：00:00</div>
-          <div style="font-size:11px;color:var(--ink3)">本页讲课逐字稿 / 备注</div>
-        </div>
+    
+    <!-- 主内容区 -->
+    <div style="flex:1;display:flex;overflow:hidden;background:#1a1a2e">
+      <!-- 左侧幻灯片区域 -->
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px;position:relative">
+        <img id="pptPreviewImage" src="" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+        <button onclick="prevPPTPage()" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.9);border:none;font-size:24px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;z-index:10">‹</button>
+        <button onclick="nextPPTPage()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.9);border:none;font-size:24px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;z-index:10">›</button>
       </div>
-      <div id="pptNotesContent" style="font-size:14px;line-height:2;color:var(--ink2);background:var(--primary-bg);padding:16px;border-radius:10px;border-left:4px solid var(--primary)"></div>
+      
+      <!-- 右侧备注面板 -->
+      <div id="pptNotesPanel" style="width:340px;background:#fff;border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);background:var(--primary-bg)">
+          <div style="font-size:13px;font-weight:700;color:var(--ink)">📝 本页备注 / 逐字稿</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px" id="pptNotesTime">时间：00:00</div>
+        </div>
+        <div id="pptNotesContent" style="flex:1;overflow-y:auto;padding:16px;font-size:13px;line-height:1.9;color:var(--ink2)"></div>
+      </div>
+    </div>
+    
+    <!-- 底部缩略图导航 -->
+    <div style="padding:10px 16px;background:#2d2d44;display:flex;gap:8px;overflow-x:auto;flex-shrink:0">
+      <div id="pptThumbnails" style="display:flex;gap:8px"></div>
     </div>
   </div>
 </div>
 
 <script>
-const BUILTIN_PPT_NOTES=[
-  {page:1,time:"00:00",notes:"课程导入：内分泌系统由内分泌腺和兼有内分泌功能的细胞构成。"},
-  {page:2,time:"00:50",notes:"人体重要内分泌腺介绍，甲状腺激素三大功能：调节有机物代谢、促进生长发育、提高神经兴奋性。"},
-  {page:3,time:"01:30",notes:"甲状腺功能异常：甲减（分泌不足）和甲亢（分泌过多）。"},
-  {page:4,time:"03:50",notes:"甲减症状分析：贪睡疲劳（神经兴奋性不足）、怕冷（有机物代谢不足）。"},
-  {page:5,time:"05:40",notes:"甲亢症状：怕热多汗、吃多饿快、易怒。缺碘导致大脖子病（地方性甲状腺肿）。"},
-  {page:6,time:"11:40",notes:"呆小症：幼年缺碘导致智力发育不全+身材矮小。大脖子病成因分析。"},
-  {page:7,time:"13:55",notes:"分级调节：下丘脑→促甲状腺激素释放激素→垂体→促甲状腺激素→甲状腺→甲状腺激素。"},
-  {page:8,time:"15:45",notes:"负反馈调节：甲状腺激素过多时抑制下丘脑和垂体。促甲状腺激素双重功能：促进激素分泌+促进甲状腺发育。"},
-  {page:9,time:"16:10",notes:"大脖子病成因：缺碘→甲状腺激素合成不足→负反馈减弱→促甲状腺激素增多→甲状腺肿大。"},
-  {page:10,time:"16:30",notes:"分级调节轴也适用于性腺和肾上腺皮质。下丘脑分泌多种促激素释放激素，垂体分泌多种促激素。"},
-  {page:11,time:"16:50",notes:"性腺：卵巢（雌激素、孕激素）和睾丸（雄激素）。性激素功能：促进生殖器官发育、生殖细胞生成、第二性征出现。本质是固醇类。"},
-  {page:12,time:"18:00",notes:"第二性征举例。肾上腺结构：皮质（醛固酮、皮质醇）和髓质（肾上腺素）。"},
-  {page:13,time:"20:50",notes:"肾上腺皮质：盐皮质激素（醛固酮，保钠排钾）、糖皮质激素（皮质醇，升血糖）。髓质受交感神经调控，分泌肾上腺素。"},
-  {page:14,time:"21:15",notes:"肾上腺素功能：提高应激能力、升血糖、协同产热。胰岛：胰腺内分泌部，胰岛A细胞（胰高血糖素，升血糖）、胰岛B细胞（胰岛素，降血糖）。"},
-  {page:15,time:"22:25",notes:"垂体-生长激素：促进骨生长和蛋白质合成。异常：巨人症（幼年过多）、侏儒症（幼年过少）、肢端肥大症（成年过多）。侏儒症智力正常，呆小症智力不全。"},
-  {page:16,time:"23:20",notes:"课堂总结：内分泌系统组成、主要腺体及激素、分级调节与负反馈调节。"},
-  {page:17,time:"24:55",notes:"课后重点：内分泌系统组成、甲状腺激素功能及异常、分级调节机制、主要内分泌腺及激素。下节课血糖平衡调节。"},
-  {page:18,time:"26:25",notes:"课程结束。"}
+const BUILTIN_PPT_PAGES=[
+  {page:1,time:"00:00",image:"https://aka.doubaocdn.com/s/5wAoZvCob7",notes:"课程导入：内分泌系统由内分泌腺和兼有内分泌功能的细胞构成。老师感染新冠后期，嗓音状态欠佳请包涵。"},
+  {page:2,time:"00:50",image:"https://aka.doubaocdn.com/s/h7szkF4VLL",notes:"人体重要内分泌腺介绍。甲状腺激素三大功能：调节有机物代谢、促进生长发育、提高神经兴奋性。"},
+  {page:3,time:"01:30",image:"https://aka.doubaocdn.com/s/T62xC4tbRR",notes:"甲状腺位置：喉和气管两侧。甲状腺功能异常：甲减（分泌不足）和甲亢（分泌过多）。"},
+  {page:4,time:"03:50",image:"https://aka.doubaocdn.com/s/lTTHZ3jVDh",notes:"甲减症状分析：贪睡疲劳（神经兴奋性不足）、怕冷（有机物代谢不足、产能不足）。"},
+  {page:5,time:"05:40",image:"https://aka.doubaocdn.com/s/vXSvqkVcBw",notes:"甲亢症状：怕热多汗、吃多饿快、易怒。缺碘导致大脖子病（地方性甲状腺肿），常见于山区。"},
+  {page:6,time:"11:40",image:"https://aka.doubaocdn.com/s/5Jx9uNrvFv",notes:"呆小症：幼年缺碘或孕妇缺碘导致。呆=神经系统发育不好，小=生长发育受阻。大脖子病成因分析。"},
+  {page:7,time:"13:55",image:"https://aka.doubaocdn.com/s/PJ7427wISb",notes:"分级调节：下丘脑分泌促甲状腺激素释放激素→作用于垂体→分泌促甲状腺激素→作用于甲状腺→分泌甲状腺激素。"},
+  {page:8,time:"15:45",image:"https://aka.doubaocdn.com/s/psX6Tn9XNM",notes:"负反馈调节：甲状腺激素过多时抑制垂体和下丘脑。促甲状腺激素双重功能：促进激素分泌+促进甲状腺发育/细胞增殖。"},
+  {page:9,time:"16:10",image:"https://aka.doubaocdn.com/s/hmzDP8XBoz",notes:"大脖子病成因：缺碘→甲状腺激素合成不足→负反馈减弱→促甲状腺激素增多→促进甲状腺发育→甲状腺肿。"},
+  {page:10,time:"16:30",image:"https://aka.doubaocdn.com/s/PnDCV3noxb",notes:"分级调节轴也适用于性腺和肾上腺皮质。下丘脑分泌多种促激素释放激素，垂体分泌多种促激素。"},
+  {page:11,time:"16:50",image:"https://aka.doubaocdn.com/s/FZvh91tg8M",notes:"性腺：卵巢（雌激素、孕激素）和睾丸（雄激素）。性激素功能：促进生殖器官发育、生殖细胞生成、第二性征出现。本质是固醇类。"},
+  {page:12,time:"18:00",image:"https://aka.doubaocdn.com/s/IyuUyXoHsi",notes:"第二性征举例：男性喉结胡子，女性乳房发育。肾上腺结构：皮质（醛固酮、皮质醇）和髓质（肾上腺素）。"},
+  {page:13,time:"20:50",image:"https://aka.doubaocdn.com/s/PwIjpwe1fT",notes:"肾上腺皮质：盐皮质激素（醛固酮，保钠排钾、调节水盐代谢）、糖皮质激素（皮质醇，升血糖、调节有机物代谢）。髓质受交感神经调控。"},
+  {page:14,time:"21:15",image:"https://aka.doubaocdn.com/s/iUjAX61AEL",notes:"肾上腺素功能：提高机体应激能力、升血糖、协同甲状腺激素产热。胰岛：胰腺内分泌部，胰岛A细胞（胰高血糖素升血糖）、胰岛B细胞（胰岛素降血糖）。"},
+  {page:15,time:"22:25",image:"https://aka.doubaocdn.com/s/d0VjYKNrj6",notes:"垂体-生长激素：促进骨生长和蛋白质合成。异常：巨人症（幼年过多）、侏儒症（幼年过少，智力正常）、肢端肥大症（成年过多）。"},
+  {page:16,time:"23:20",image:"https://aka.doubaocdn.com/s/eItV4t2ipC",notes:"课堂总结：内分泌系统组成、主要腺体及激素功能、分级调节与负反馈调节机制。"},
+  {page:17,time:"24:55",image:"https://aka.doubaocdn.com/s/z8Er81OLcm",notes:"课后重点：内分泌系统组成、甲状腺激素功能及异常病症、分级调节机制、主要内分泌腺及激素。下节课血糖平衡调节。"},
+  {page:18,time:"26:25",image:"https://aka.doubaocdn.com/s/gNjVkI8UNP",notes:"课程结束。"}
 ];
 
-const FEISHU_PPT_URL="https://my.feishu.cn/file/YVQFba8KcoTDcHxkZpCcovTXn4b";
 let currentPPTIndex=0;
+let pptNotesVisible=true;
 
 function openPPTPreview(pptId){
   if(pptId&&pptId.startsWith("builtin_")){
     currentPPTIndex=0;
     document.getElementById("pptPreviewPanel").style.display="flex";
-    document.getElementById("pptPageSlider").max=BUILTIN_PPT_NOTES.length;
     renderPPTPage();
+    renderPPTThumbnails();
   }else{
     toast("该PPT为对话生成，预览功能仅支持内置示例");
   }
 }
 function closePPTPreview(){document.getElementById("pptPreviewPanel").style.display="none";}
-function openFeishuPPT(){window.open(FEISHU_PPT_URL,"_blank");}
+
 function renderPPTPage(){
-  if(!BUILTIN_PPT_NOTES||currentPPTIndex>=BUILTIN_PPT_NOTES.length)return;
-  const page=BUILTIN_PPT_NOTES[currentPPTIndex];
-  document.getElementById("pptCurrentPageLabel").textContent="第 "+page.page+" 页";
-  document.getElementById("pptPageNum").textContent=page.page;
-  document.getElementById("pptPageTime").textContent="时间："+page.time;
+  if(!BUILTIN_PPT_PAGES||currentPPTIndex>=BUILTIN_PPT_PAGES.length)return;
+  const page=BUILTIN_PPT_PAGES[currentPPTIndex];
+  document.getElementById("pptPreviewImage").src=page.image;
+  document.getElementById("pptPreviewPageInfo").textContent="第 "+(currentPPTIndex+1)+" / "+BUILTIN_PPT_PAGES.length+" 页";
+  document.getElementById("pptNotesTime").textContent="时间："+page.time;
   document.getElementById("pptNotesContent").textContent=page.notes||"（本页无备注）";
-  document.getElementById("pptPageSlider").value=page.page;
+  document.querySelectorAll(".ppt-thumb").forEach((el,i)=>{
+    el.style.border=i===currentPPTIndex?"3px solid var(--accent)":"2px solid transparent";
+    el.style.opacity=i===currentPPTIndex?"1":"0.6";
+  });
 }
-function goToPPTPage(index){currentPPTIndex=parseInt(index);renderPPTPage();}
+
+function renderPPTThumbnails(){
+  const container=document.getElementById("pptThumbnails");
+  container.innerHTML=BUILTIN_PPT_PAGES.map((p,i)=>`
+    <div class="ppt-thumb" onclick="goToPPTPage(${i})" style="width:80px;height:45px;flex-shrink:0;border-radius:4px;overflow:hidden;cursor:pointer;transition:all .2s;border:2px solid ${i===currentPPTIndex?"var(--accent)":"transparent"};opacity:${i===currentPPTIndex?"1":"0.6"}">
+      <img src="${p.image}" style="width:100%;height:100%;object-fit:cover" loading="lazy">
+    </div>
+  `).join("");
+}
+
+function goToPPTPage(index){currentPPTIndex=index;renderPPTPage();}
 function prevPPTPage(){if(currentPPTIndex>0){currentPPTIndex--;renderPPTPage();}}
-function nextPPTPage(){if(currentPPTIndex<BUILTIN_PPT_NOTES.length-1){currentPPTIndex++;renderPPTPage();}}
+function nextPPTPage(){if(currentPPTIndex<BUILTIN_PPT_PAGES.length-1){currentPPTIndex++;renderPPTPage();}}
+function togglePPTNotes(){
+  pptNotesVisible=!pptNotesVisible;
+  document.getElementById("pptNotesPanel").style.display=pptNotesVisible?"flex":"none";
+}
+function downloadCurrentPPTImage(){
+  if(!BUILTIN_PPT_PAGES)return;
+  const page=BUILTIN_PPT_PAGES[currentPPTIndex];
+  const a=document.createElement("a");
+  a.href=page.image;
+  a.download="PPT第"+(currentPPTIndex+1)+"页.jpg";
+  a.click();
+}
+
 document.addEventListener("keydown",function(e){
   if(document.getElementById("pptPreviewPanel").style.display==="flex"){
     if(e.key==="ArrowLeft")prevPPTPage();
